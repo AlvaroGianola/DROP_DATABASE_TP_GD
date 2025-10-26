@@ -124,7 +124,7 @@ CREATE TABLE DROP_DATABASE.Alumno (
 );
 GO
 
--- TP_ALUMNO (evaluaciones parciales / trabajos pr�cticos)
+-- TP_ALUMNO (evaluaciones parciales / trabajos prácticos)
 CREATE TABLE DROP_DATABASE.TP_Alumno (
     id INT IDENTITY(1,1) PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
@@ -230,80 +230,166 @@ CREATE TABLE DROP_DATABASE.Detalle (
 );
 
 
+-- Mariano
+
 CREATE TABLE DROP_DATABASE.Medio_Pago (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    medioPago VARCHAR(50) NOT NULL
+    medioPago VARCHAR(255) NOT NULL
 );
+GO
+
+insert into DROP_DATABASE.Medio_Pago
+select DISTINCT Pago_MedioPago from gd_esquema.Maestra
+GO
 
 CREATE TABLE DROP_DATABASE.Factura (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    fechaEmision DATETIME2(6),
-    fechaVencimiento DATETIME2(6),
-    importeTotal DECIMAL(18,2),
-    legajoAlumno BIGINT,
+    facturaNumero BIGINT PRIMARY KEY NOT NULL,
+    fechaEmision DATETIME2(6) NOT NULL,
+    fechaVencimiento DATETIME2(6) NOT NULL,
+    importeTotal DECIMAL(18,2) NOT NULL,
+    legajoAlumno BIGINT NOT NULL,
     CONSTRAINT fk_legajoAlumno
         FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
 );
+GO
+
+insert into DROP_DATABASE.Factura
+select DISTINCT
+        f.Factura_Numero,
+        f.Factura_FechaEmision,
+        f.Factura_FechaVencimiento,
+        f.Factura_Total,
+        a.legajoAlumno
+    from gd_esquema.Maestra f
+        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = f.Alumno_Legajo;
+GO
 
 CREATE TABLE DROP_DATABASE.Pago (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fecha DATETIME2(6),
-    importe DECIMAL(18, 2),
-    medioPagoId INT,
-    facturaId INT,
+    fecha DATETIME2(6) NOT NULL,
+    importe DECIMAL(18, 2) NOT NULL,
+    medioPagoId INT NOT NULL,
+    facturaNumero BIGINT NOT NULL,  
     CONSTRAINT fk_medioPagoId
         FOREIGN KEY (medioPagoId) REFERENCES DROP_DATABASE.Medio_Pago(id),
     CONSTRAINT fk_facturaId
-        FOREIGN KEY (facturaId) REFERENCES DROP_DATABASE.Factura(id)
+        FOREIGN KEY (facturaNumero) REFERENCES DROP_DATABASE.Factura(facturaNumero)
 );
+GO
+
+insert into DROP_DATABASE.Pago
+select DISTINCT
+        m.Pago_Fecha,
+        m.Pago_Importe,
+        mp.id AS medioPagoId, 
+        f.facturaNumero
+    from gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
+        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero;
+GO
 
 CREATE TABLE DROP_DATABASE.Periodo (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    periodoAnio BIGINT,
-    periodoMes BIGINT
+    periodoAnio BIGINT NOT NULL,
+    periodoMes BIGINT NOT NULL
 );
+GO
+
+insert into DROP_DATABASE.Periodo
+select DISTINCT
+        Periodo_Anio, Periodo_Mes
+    from gd_esquema.Maestra;
+GO
+
 
 CREATE TABLE DROP_DATABASE.Detalle_Factura (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    codigoCurso BIGINT,
-    importe DECIMAL(18, 2),
-    facturaId INT,
-    periodoId INT,
+    codigoCurso BIGINT NOT NULL,
+    importe DECIMAL(18, 2) NOT NULL,
+    facturaNumero BIGINT NOT NULL,
+    periodoId INT NOT NULL,
     CONSTRAINT fk_codigoCurso
         FOREIGN KEY (codigoCurso) REFERENCES DROP_DATABASE.Curso(codigoCurso),
     CONSTRAINT fk_facturaId
-        FOREIGN KEY (facturaId) REFERENCES DROP_DATABASE.Factura(id),
+        FOREIGN KEY (facturaNumero) REFERENCES DROP_DATABASE.Factura(facturaNumero),
     CONSTRAINT fk_periodoId
         FOREIGN KEY (periodoId) REFERENCES DROP_DATABASE.Periodo(id)
 );
+GO
+
+insert into DROP_DATABASE.Detalle_Factura
+select DISTINCT
+        c.codigoCurso,
+        m.Detalle_Factura_Importe,
+        f.facturaNumero, 
+        p.id
+    from gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero
+        inner join DROP_DATABASE.Periodo p on p.periodoAnio = m.Periodo_Anio and p.periodoMes = m.Periodo_Mes;
+GO
 
 CREATE TABLE DROP_DATABASE.Evaluacion (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fecha DATETIME2(6)
+    fecha DATETIME2(6) NOT NULL
 );
+GO
+
+insert into DROP_DATABASE.Evaluacion
+SELECT DISTINCT Evaluacion_Curso_fechaEvaluacion
+    FROM gd_esquema.Maestra
+WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL;
+GO
 
 CREATE TABLE DROP_DATABASE.Evaluacion_Rendida (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    legajoAlumno BIGINT,
-    nota BIGINT,
-    presente BIT,
-    instancia BIGINT,
-    evaluacionId INT,
+    legajoAlumno BIGINT NOT NULL,
+    nota BIGINT NULL,           -- Puede ser NULL si no se evaluó
+    presente BIT NOT NULL,
+    instancia BIGINT NOT NULL,
+    evaluacionId INT NOT NULL,
     CONSTRAINT fk_evaluacionId
         FOREIGN KEY (evaluacionId) REFERENCES DROP_DATABASE.Evaluacion(id),
     CONSTRAINT fk_legajoAlumno
         FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
 );
+GO
 
-CREATE TABLE Modulo_X_Evaluacion (
+insert into DROP_DATABASE.Evaluacion_Rendida
+select DISTINCT
+        a.legajoAlumno,
+        m.Evaluacion_Curso_Nota,
+        m.Evaluacion_Curso_Presente,
+        m.Evaluacion_Curso_Instancia,
+        e.id
+    from gd_esquema.Maestra m
+        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = m.Alumno_Legajo
+        inner join DROP_DATABASE.Evaluacion e on e.fecha = m.Evaluacion_Curso_fechaEvaluacion;
+go
+
+CREATE TABLE DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    evaluacionId INT,
-    modulo INT,
+    evaluacionId INT NOT NULL,
+    modulo INT NOT NULL,
     CONSTRAINT fk_evalId
         FOREIGN KEY (evaluacionId) REFERENCES DROP_DATABASE.Evaluacion(id),
     CONSTRAINT fk_modulo
         FOREIGN KEY (modulo) REFERENCES DROP_DATABASE.Modulo_x_Curso(id)
 );
+GO
+
+insert into DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion
+select DISTINCT
+        e.id,
+        mxc.id
+    FROM gd_esquema.Maestra maestra
+        INNER JOIN DROP_DATABASE.Evaluacion e ON e.Fecha = maestra.Evaluacion_Curso_fechaEvaluacion
+        INNER JOIN DROP_DATABASE.Modulo m ON m.nombre = maestra.Modulo_Nombre
+        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = maestra.Curso_Codigo
+        INNER JOIN DROP_DATABASE.Modulo_X_Curso mxc ON mxc.moduloid = m.id AND mxc.cursoid = c.codigoCurso
+WHERE maestra.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    AND maestra.Modulo_Nombre IS NOT NULL
+    AND maestra.Curso_Codigo IS NOT NULL;
 
 
 --------------------------------------------------------------
@@ -366,4 +452,5 @@ GO
 
 go; 
 select * from GD2C2025.gd_esquema.Maestra
+
 
