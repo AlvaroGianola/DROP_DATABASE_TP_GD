@@ -451,6 +451,102 @@ GO
     
 
 go; 
-select * from GD2C2025.gd_esquema.Maestra
+
+INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
+SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
+FROM gd_esquema.Maestra
+WHERE Institucion_Nombre IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Turno (nombre)
+SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
+WHERE Curso_Turno IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Dia_Semana (dia)
+SELECT DISTINCT Curso_Dia FROM gd_esquema.Maestra
+WHERE Curso_Dia IS NOT NULL;
+
+-- Acá hay que ver si para código curso usamos el que ya viene en la tabla maestra
+-- (como en este código) o si usamos IDENTITY como está definido la PK de Curso.
+INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
+SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
+    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+
+------------------------------------------------------------
+-- Cargar las provincias
+------------------------------------------------------------
+
+-- Cuidado, los datos que tiene la tabla maestra en Sede_Provincia por algún motivo no son provincias argentinas.
+-- Pero si no se insertan, no van a aparecer 2 Sedes
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Sede_Provincia
+FROM gd_esquema.Maestra
+WHERE Sede_Provincia IS NOT NULL
+    AND Sede_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Profesor_Provincia
+FROM gd_esquema.Maestra
+WHERE Profesor_Provincia IS NOT NULL
+    AND Profesor_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Alumno_Provincia
+FROM gd_esquema.Maestra
+WHERE Alumno_Provincia IS NOT NULL
+    AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+------------------------------------------------------------
+-- Cargar las localidades
+------------------------------------------------------------
+
+INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
+SELECT DISTINCT Sede_Localidad, p.id
+FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
+WHERE m.Sede_Localidad IS NOT NULL
+    AND m.Sede_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+
+INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
+SELECT DISTINCT m.Profesor_Localidad, p.id
+FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
+WHERE m.Profesor_Localidad IS NOT NULL
+    AND m.Profesor_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+
+-- Acá hay algunos datos rotos. Por ejemplo pone ";bernador Andonaeghi", ";doy"
+-- Pueden probar ejecutando el select sin la línea del insert
+INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
+SELECT DISTINCT m.Alumno_Localidad, p.id
+FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Alumno_Provincia
+WHERE m.Alumno_Localidad IS NOT NULL
+    AND m.Alumno_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+
+INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
+SELECT DISTINCT 
+    Sede_Nombre,
+    Sede_Telefono,
+    Sede_Direccion,
+    Sede_Mail,
+    l.id,
+    i.id
+FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = Sede_Provincia
+    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Sede_Localidad AND l.provinciaId = p.id
+    JOIN DROP_DATABASE.Institucion i ON i.nombre = m.Institucion_Nombre
+WHERE m.Sede_Nombre IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
+SELECT DISTINCT 
+    l.id,
+    m.Profesor_Apellido,
+    m.Profesor_Nombre,
+    m.Profesor_Dni,
+    m.Profesor_FechaNacimiento,
+    m.Profesor_Direccion,
+    m.Profesor_Telefono,
+    m.Profesor_Mail
+FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad
 
 
