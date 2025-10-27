@@ -25,7 +25,7 @@ CREATE TABLE DROP_DATABASE.Provincia (
 CREATE TABLE DROP_DATABASE.Localidad (
     id INT IDENTITY(1,1) PRIMARY KEY,
     nombre NVARCHAR(255) NOT NULL,
-    provincia_id INT NOT NULL 
+    provinciaId INT NOT NULL 
         REFERENCES DROP_DATABASE.Provincia(id)
 );
 
@@ -41,14 +41,14 @@ CREATE TABLE DROP_DATABASE.Sede (
     nombre NVARCHAR(255) NOT NULL,
     telefono NVARCHAR(255),
     direccion NVARCHAR(255),
-    localidad_id INT NOT NULL REFERENCES DROP_DATABASE.Localidad(id),
+    localidadId INT NOT NULL REFERENCES DROP_DATABASE.Localidad(id),
     mail NVARCHAR(255),
-    institucion_id INT NOT NULL REFERENCES DROP_DATABASE.Institucion(id)
+    institucionId INT NOT NULL REFERENCES DROP_DATABASE.Institucion(id)
 );
 
 CREATE TABLE DROP_DATABASE.Profesor (
     id BIGINT IDENTITY(1,1) PRIMARY KEY,
-    localidad_id INT NOT NULL REFERENCES DROP_DATABASE.Localidad(id),
+    localidadId INT NOT NULL REFERENCES DROP_DATABASE.Localidad(id),
     apellido NVARCHAR(255),
     nombre NVARCHAR(255),
     dni NVARCHAR(255),
@@ -100,7 +100,7 @@ CREATE TABLE DROP_DATABASE.Dia_Semana (
 
 CREATE TABLE DROP_DATABASE.Dia_Cursado (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    diaSemanal_id INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
+    diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
     codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 
