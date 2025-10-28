@@ -76,7 +76,7 @@ CREATE TABLE DROP_DATABASE.Curso (
     categoriaId BIGINT NOT NULL REFERENCES DROP_DATABASE.Categoria(id),
     fechaInicio DATETIME2(6) NOT NULL,
     fechaFin DATETIME2(6) NOT NULL,
-    duracion BIGINT NOT NULL,
+    duracion AS DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
     precioMensual DECIMAL(18,2)
 );
@@ -217,7 +217,7 @@ CREATE TABLE DROP_DATABASE.Pregunta (
 
 CREATE TABLE DROP_DATABASE.Encuesta_Respondida (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fechaRegistro DATETIME2(6) NOT NULL,
+    fechaRegistro DATETIME2(6) default(sysdatetime()),
     encuestaObservacion NVARCHAR(255) NOT NULL,
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
@@ -225,7 +225,7 @@ CREATE TABLE DROP_DATABASE.Encuesta_Respondida (
 CREATE TABLE DROP_DATABASE.Detalle (
     id INT IDENTITY(1,1) PRIMARY KEY,
     preguntaId INT NOT NULL REFERENCES DROP_DATABASE.Pregunta(id),
-    respuestaNota BIGINT NOT NULL,
+    respuestaNota BIGINT CHECK (respuestaNota BETWEEN 1 AND 10),
     encuestaRespondidaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta_Respondida(id)
 );
 
@@ -290,8 +290,8 @@ GO
 
 CREATE TABLE DROP_DATABASE.Periodo (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    periodoAnio BIGINT NOT NULL,
-    periodoMes BIGINT NOT NULL
+    periodoAnio BIGINT default(year(sysdatetime())),
+    periodoMes BIGINT default(month(sysdatetime()))
 );
 GO
 
@@ -396,7 +396,7 @@ WHERE maestra.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
 -- TRIGGERS
 --------------------------------------------------------------
 go;
-CREATE TRIGGER trg_validarRangoFechasCurso ON DROP_DATABASE.Curso
+CREATE TRIGGER DROP_DATABASE.trg_validarRangoFechasCurso ON DROP_DATABASE.Curso
 FOR INSERT, UPDATE
 AS
 BEGIN
@@ -412,25 +412,7 @@ BEGIN
 END;
 
 go;
-ALTER TABLE DROP_DATABASE.Curso
-ADD CONSTRAINT DF_Curso_DuracionDefault DEFAULT (DATEDIFF(MONTH, fechaInicio, fechaFin)) FOR duracion;
 
-
-go;
-CREATE TRIGGER trg_validarDuracionCurso ON DROP_DATABASE.Curso
-FOR INSERT, UPDATE
-AS
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted
-        WHERE DATEDIFF(MONTH, fechaInicio, fechaFin)!=duracion
-    )
-    BEGIN
-        RAISERROR('La duracion no coincide con la diferencia de meses entre las fechas de inicio y fin.', 16, 1);
-        ROLLBACK TRANSACTION;
-    END
-END;
 
 go;
 
@@ -448,9 +430,89 @@ BEGIN
     WHERE ISNULL(i.estado, '') <> ISNULL(d.estado, '');
 END;
 GO
+
+--trigger que calcula y modifica la intancia de parcial en base a la cantidad de veces que este alumno intento rendir 
+-- como me doy cuenta? seleccionando todas las evaliaciones que tengan TODOS los modulos tomados por la evaluacion actual 
+--y contando en cuales de ellas existe una evaluacion rendida por el alumno  
+
+CREATE TRIGGER DROP_DATABASE.trg_asignarInstanciaParcial
+ON DROP_DATABASE.Evaluacion_Rendida
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE er
+    SET instancia = (
+        SELECT COUNT(*) 
+        FROM DROP_DATABASE.Evaluacion_Rendida er2
+        WHERE er2.legajoAlumno = i.legajoAlumno
+          AND er2.id < i.id  -- evita contar la evaluación recién insertada
+          AND NOT EXISTS (   -- asegura que no falte ningún módulo de la evaluación actual
+                SELECT 1
+                FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx
+                WHERE mx.evaluacionId = i.evaluacionId
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx2
+                    WHERE mx2.evaluacionId = er2.evaluacionId
+                      AND mx2.modulo = mx.modulo
+                )
+          )
+    )
+    FROM DROP_DATABASE.Evaluacion_Rendida er
+    INNER JOIN inserted i ON er.id = i.id;
+END;
+GO;
+
+CREATE TRIGGER DROP_DATABASE.trg_unicaInscripcion
+ON DROP_DATABASE.Inscripcion_Curso
+INSTEAD OF INSERT
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM DROP_DATABASE.Inscripcion_Curso ic
+        JOIN inserted i ON ic.legajoAlumno = i.legajoAlumno AND ic.codigoCurso = i.codigoCurso
+    )
+    BEGIN
+        RAISERROR('El alumno ya está inscripto en este curso.', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+
+    INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
+    SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
+END;
+
+
+GO;
+---------------------------------------------------
+--index
+---------------------------------------------------
+CREATE INDEX IX_Inscripcion_Curso_Alumno ON DROP_DATABASE.Inscripcion_Curso(legajoAlumno);
+CREATE INDEX IX_Inscripcion_Curso_Curso ON DROP_DATABASE.Inscripcion_Curso(codigoCurso);
+CREATE INDEX IX_TP_Alumno_Curso ON DROP_DATABASE.TP_Alumno(curso);
+CREATE INDEX IX_Factura_Alumno ON DROP_DATABASE.Factura(legajoAlumno);
+CREATE INDEX IX_Pago_Factura ON DROP_DATABASE.Pago(id);
+
+---------------------------------------------------
+--constraints
+---------------------------------------------------
+
+ALTER TABLE DROP_DATABASE.Curso
+ADD CONSTRAINT CK_Curso_PrecioPositivo CHECK (precioMensual >= 0);
+
+ALTER TABLE DROP_DATABASE.Final_rendido
+ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
+
     
 
 go; 
+
+----------------------------------------------------------
+-- Inserts
+----------------------------------------------------------
 
 INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
 SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
