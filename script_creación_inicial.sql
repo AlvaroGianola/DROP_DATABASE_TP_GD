@@ -67,6 +67,11 @@ CREATE TABLE DROP_DATABASE.Turno (
 -- CURSO Y RELACIONADOS
 ------------------------------------------------------------
 
+CREATE TABLE DROP_DATABASE.Dia_Cursado (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    diaSemana NVARCHAR(255) NOT NULL,
+);
+
 CREATE TABLE DROP_DATABASE.Curso (
     codigoCurso BIGINT IDENTITY(1,1) PRIMARY KEY,
     sedeId INT NOT NULL REFERENCES DROP_DATABASE.Sede(id),
@@ -76,9 +81,10 @@ CREATE TABLE DROP_DATABASE.Curso (
     categoriaId BIGINT NOT NULL REFERENCES DROP_DATABASE.Categoria(id),
     fechaInicio DATETIME2(6) NOT NULL,
     fechaFin DATETIME2(6) NOT NULL,
-    duracion AS DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
+    duracion as DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
-    precioMensual DECIMAL(18,2)
+    precioMensual DECIMAL(18,2),
+    diaCursadoId int not null references DROP_DATABASE.Dia_Cursado(id),
 );
 
 CREATE TABLE DROP_DATABASE.Modulo (
@@ -93,16 +99,9 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
 
-CREATE TABLE DROP_DATABASE.Dia_Semana (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    dia NVARCHAR(255) NOT NULL
-);
 
-CREATE TABLE DROP_DATABASE.Dia_Cursado (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
-    codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
-);
+
+
 
 USE GD2C2025;
 GO
@@ -297,7 +296,7 @@ CREATE TABLE DROP_DATABASE.Encuesta_Respondida (
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
 
-CREATE TABLE DROP_DATABASE.Detalle (
+CREATE TABLE DROP_DATABASE.Detalle_Encuesta_Respondida (
     id INT IDENTITY(1,1) PRIMARY KEY,
     preguntaId INT NOT NULL REFERENCES DROP_DATABASE.Pregunta(id),
     respuestaNota BIGINT CHECK (respuestaNota BETWEEN 1 AND 10),
@@ -598,15 +597,16 @@ INSERT INTO DROP_DATABASE.Turno (nombre)
 SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
 WHERE Curso_Turno IS NOT NULL;
 
-INSERT INTO DROP_DATABASE.Dia_Semana (dia)
-SELECT DISTINCT Curso_Dia FROM gd_esquema.Maestra
-WHERE Curso_Dia IS NOT NULL;
+INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemana)
+VALUES
+('Lunes'),
+('Martes'),
+('Miércoles'),
+('Jueves'),
+('Viernes'),
+('Sábado');
 
--- Acá hay que ver si para código curso usamos el que ya viene en la tabla maestra
--- (como en este código) o si usamos IDENTITY como está definido la PK de Curso.
-INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
-SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
-    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+
 
 ------------------------------------------------------------
 -- Cargar las provincias
@@ -685,5 +685,34 @@ SELECT DISTINCT
     m.Profesor_Mail
 FROM gd_esquema.Maestra m
     JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad
+
+
+
+insert Into DROP_DATABASE.Categoria(nombre)
+select distinct Curso_Categoria from gd_esquema.Maestra 
+
+Insert Into DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
+select Curso_Codigo, sedeid, profeid, Curso_Nombre, Curso_Descripcion, cursocategid, Curso_FechaInicio,Curso_FechaFin, turno, Curso_PrecioMensual from gd_esquema.Maestra
+
+Insert Into DROP_DATABASE.Modulo (nombre, descripcion) 
+select Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
+
+Insert Into DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
+select curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
+                    join DROP_DATABASE.Curso curso on curso.codigoCurso=maestra.Curso_Codigo
+                    join DROP_DATABASE.Modulo modulo on maestra.Modulo_Nombre=modulo.nombre AND maestra.Modulo_Descripcion=modulo.descripcion
+
+Insert Into DROP_DATABASE.Encuesta (cursoId)
+select maestra.Curso_Codigo from gd_esquema.Maestra maestra 
+where maestra.Encuesta_Pregunta1!=NULL or maestra.Encuesta_Pregunta2!=NULL or maestra.Encuesta_Pregunta3 !=NULL or maestra.Encuesta_Pregunta4!=NULL
+
+Insert into DROP_DATABASE.Pregunta
+select
+
+Insert into DROP_DATABASE.Encuesta_Respondida
+
+Insert into DROP_DATABASE.Detalle_Encuesta_Respondida
+
+
 
 
