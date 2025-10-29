@@ -107,7 +107,7 @@ CREATE TABLE DROP_DATABASE.Dia_Cursado (
 USE GD2C2025;
 GO
 
--- ALUMNO
+-- ALUMNO--ELISEO
 CREATE TABLE DROP_DATABASE.Alumno (
     legajoAlumno BIGINT PRIMARY KEY,
     nombre NVARCHAR(255) NOT NULL,
@@ -124,6 +124,25 @@ CREATE TABLE DROP_DATABASE.Alumno (
 );
 GO
 
+INSERT INTO DROP_DATABASE.Alumno (legajoAlumno, nombre, apellido, dni, localidad_id, domicilio, fechaNacimiento, direccion, mail, telefono)
+SELECT DISTINCT
+        Alumno_Legajo,
+        Alumno_Nombre,
+        Alumno_Apellido,
+        Alumno_Dni,
+        l.id AS localidad_id,
+        Alumno_Domicilio,
+        Alumno_FechaNacimiento,
+        Alumno_Direccion,
+        Alumno_Mail,
+        Alumno_Telefono
+    FROM gd_esquema.Maestra m
+        LEFT JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Alumno_Localidad
+WHERE Alumno_Legajo IS NOT NULL;
+--AL EJECUTAR EL SCRIPT SE TIENE QUE TENER EN CUENTA EL ORDEN DE GUARDADO DE DATOS
+-- PARA QUE NO HAYA PROBLEMAS DE FK DEBIDO A QUE ALGUNOS DATOS DE ALUMNO DEPENDEN DE OTRAS TABLAS
+
+
 -- TP_ALUMNO (evaluaciones parciales / trabajos prácticos)
 CREATE TABLE DROP_DATABASE.TP_Alumno (
     id INT IDENTITY(1,1) PRIMARY KEY,
@@ -137,6 +156,16 @@ CREATE TABLE DROP_DATABASE.TP_Alumno (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
+INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
+SELECT DISTINCT
+        a.legajoAlumno,
+        m.TP_Alumno_Nota,
+        m.TP_Alumno_FechaEvaluacion,
+        c.codigoCurso
+    FROM gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+WHERE m.TP_Alumno_FechaEvaluacion IS NOT NULL;
 
 -- INSCRIPCION A CURSO
 CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
@@ -152,6 +181,16 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
+INSERT INTO DROP_DATABASE.Inscripcion_Curso (legajoAlumno, codigoCurso, estado, fechaRespuesta)
+SELECT DISTINCT
+        a.legajoAlumno,
+        c.codigoCurso,
+        m.Inscripcion_Curso_Estado,
+        m.Inscripcion_Curso_FechaRespuesta
+    FROM gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+WHERE m.Inscripcion_Curso_Estado IS NOT NULL;
 
 -- FINAL (mesa de examen)
 CREATE TABLE DROP_DATABASE.Final (
@@ -164,6 +203,16 @@ CREATE TABLE DROP_DATABASE.Final (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
+INSERT INTO DROP_DATABASE.Final (idFinal, fecha, hora, curso, descripcion)
+SELECT DISTINCT
+        m.Final_IdFinal,
+        m.Final_Fecha,
+        m.Final_Hora,
+        c.codigoCurso,
+        m.Final_Descripcion
+    FROM gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+WHERE m.Final_IdFinal IS NOT NULL;
 
 -- FINAL RENDIDO (registro de alumno en un final)
 CREATE TABLE DROP_DATABASE.Final_rendido (
@@ -181,6 +230,19 @@ CREATE TABLE DROP_DATABASE.Final_rendido (
         REFERENCES DROP_DATABASE.Profesor(id)
 );
 GO
+INSERT INTO DROP_DATABASE.Final_rendido (id, legajoAlumno, finalId, presente, nota, profesor)
+SELECT DISTINCT
+        m.Final_Rendido_Id,
+        a.legajoAlumno,
+        f.idFinal,
+        m.Final_Rendido_Presente,
+        m.Final_Rendido_Nota,
+        p.id AS profesor
+    FROM gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+        INNER JOIN DROP_DATABASE.Final f ON f.idFinal = m.Final_Rendido_FinalId
+        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Final_Rendido_Profesor_Dni
+WHERE m.Final_Rendido_Id IS NOT NULL;
 
 -- INSCRIPCION A FINAL
 CREATE TABLE DROP_DATABASE.Inscripcion_Final (
@@ -199,6 +261,19 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Final (
         REFERENCES DROP_DATABASE.Profesor(id)
 );
 GO
+INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
+SELECT DISTINCT
+        m.Inscripcion_Final_Id,
+        a.legajoAlumno,
+        m.Inscripcion_Final_FechaInscripcion,
+        f.idFinal,
+        m.Inscripcion_Final_Presente,
+        p.id AS profesor
+    FROM gd_esquema.Maestra m
+        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+        INNER JOIN DROP_DATABASE.Final f ON f.idFinal = m.Inscripcion_Final_FinalId
+        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Inscripcion_Final_Profesor_Dni
+WHERE m.Inscripcion_Final_Id IS NOT NULL;
 
 ------------------------------------------------------------
 -- ENCUESTAS
