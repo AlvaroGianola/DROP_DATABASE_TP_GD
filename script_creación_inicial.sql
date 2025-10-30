@@ -77,9 +77,10 @@ CREATE TABLE DROP_DATABASE.Curso (
     categoriaId BIGINT NOT NULL REFERENCES DROP_DATABASE.Categoria(id),
     fechaInicio DATETIME2(6) NOT NULL,
     fechaFin DATETIME2(6) NOT NULL,
-    duracion AS DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
+    duracion as DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
-    precioMensual DECIMAL(18,2)
+    precioMensual DECIMAL(18,2),
+    diaCursadoId int not null references DROP_DATABASE.Dia_Cursado(id),
 );
 
 CREATE TABLE DROP_DATABASE.Dia_Cursado (
@@ -100,6 +101,12 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
 
+
+
+
+
+USE GD2C2025;
+GO
 ------------------------------------------------------------
 -- ALUMNO
 ------------------------------------------------------------
@@ -392,6 +399,85 @@ ALTER TABLE DROP_DATABASE.Final_rendido
 ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
 GO
 
+    
+
+go; 
+
+----------------------------------------------------------
+-- Inserts
+----------------------------------------------------------
+
+INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
+SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
+FROM gd_esquema.Maestra
+WHERE Institucion_Nombre IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Turno (nombre)
+SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
+WHERE Curso_Turno IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemana)
+VALUES
+('Lunes'),
+('Martes'),
+('Miércoles'),
+('Jueves'),
+('Viernes'),
+('Sábado');
+
+
+
+------------------------------------------------------------
+-- Cargar las provincias
+------------------------------------------------------------
+
+-- Cuidado, los datos que tiene la tabla maestra en Sede_Provincia por algún motivo no son provincias argentinas.
+-- Pero si no se insertan, no van a aparecer 2 Sedes
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Sede_Provincia
+FROM gd_esquema.Maestra
+WHERE Sede_Provincia IS NOT NULL
+    AND Sede_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Profesor_Provincia
+FROM gd_esquema.Maestra
+WHERE Profesor_Provincia IS NOT NULL
+    AND Profesor_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Alumno_Provincia
+FROM gd_esquema.Maestra
+WHERE Alumno_Provincia IS NOT NULL
+    AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+insert Into DROP_DATABASE.Categoria(nombre)
+select distinct Curso_Categoria from gd_esquema.Maestra 
+
+Insert Into DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
+select Curso_Codigo, sedeid, profeid, Curso_Nombre, Curso_Descripcion, cursocategid, Curso_FechaInicio,Curso_FechaFin, turno, Curso_PrecioMensual from gd_esquema.Maestra
+
+Insert Into DROP_DATABASE.Modulo (nombre, descripcion) 
+select Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
+
+Insert Into DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
+select curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
+                    join DROP_DATABASE.Curso curso on curso.codigoCurso=maestra.Curso_Codigo
+                    join DROP_DATABASE.Modulo modulo on maestra.Modulo_Nombre=modulo.nombre AND maestra.Modulo_Descripcion=modulo.descripcion
+
+Insert Into DROP_DATABASE.Encuesta (cursoId)
+select maestra.Curso_Codigo from gd_esquema.Maestra maestra 
+where maestra.Encuesta_Pregunta1!=NULL or maestra.Encuesta_Pregunta2!=NULL or maestra.Encuesta_Pregunta3 !=NULL or maestra.Encuesta_Pregunta4!=NULL
+
+Insert into DROP_DATABASE.Pregunta
+select
+
+Insert into DROP_DATABASE.Encuesta_Respondida
+
+Insert into DROP_DATABASE.Detalle_Encuesta_Respondida
+------------------------------------------------------------
+-- Cargar las localidades
+------------------------------------------------------------
 ---------------------------------------------------
 -- MIGRACIÓN DE DATOS
 ---------------------------------------------------
