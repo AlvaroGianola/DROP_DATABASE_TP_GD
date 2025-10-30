@@ -99,9 +99,9 @@ CREATE TABLE DROP_DATABASE.Dia_Semana (
 );
 
 CREATE TABLE DROP_DATABASE.Dia_Cursado (
-    id INT IDENTITY(1,1) PRIMARY KEY,
     diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
     codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
+    CONSTRAINT pk_dia_Semana_Curso PRIMARY KEY (diaSemanaId, codigoCurso)
 );
 
 USE GD2C2025;
@@ -443,13 +443,13 @@ select DISTINCT
 go
 
 CREATE TABLE DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (
-    id INT IDENTITY(1,1) PRIMARY KEY,
     evaluacionId INT NOT NULL,
-    modulo INT NOT NULL,
+    moduloCursoId INT NOT NULL,
+    CONSTRAINT pk_modulo_eval PRIMARY KEY (evaluacionId, moduloCursoId),
     CONSTRAINT fk_evalId
         FOREIGN KEY (evaluacionId) REFERENCES DROP_DATABASE.Evaluacion(id),
     CONSTRAINT fk_modulo
-        FOREIGN KEY (modulo) REFERENCES DROP_DATABASE.Modulo_x_Curso(id)
+        FOREIGN KEY (moduloCursoId) REFERENCES DROP_DATABASE.Modulo_x_Curso(id)
 );
 GO
 
@@ -531,7 +531,7 @@ BEGIN
                     SELECT 1 
                     FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx2
                     WHERE mx2.evaluacionId = er2.evaluacionId
-                      AND mx2.modulo = mx.modulo
+                      AND mx2.moduloCursoId = mx.moduloCursoId
                 )
           )
     )
@@ -602,11 +602,12 @@ INSERT INTO DROP_DATABASE.Dia_Semana (dia)
 SELECT DISTINCT Curso_Dia FROM gd_esquema.Maestra
 WHERE Curso_Dia IS NOT NULL;
 
+
 -- Acá hay que ver si para código curso usamos el que ya viene en la tabla maestra
 -- (como en este código) o si usamos IDENTITY como está definido la PK de Curso.
 INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
 SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
-    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia
 
 ------------------------------------------------------------
 -- Cargar las provincias
