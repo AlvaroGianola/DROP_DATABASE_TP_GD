@@ -80,7 +80,7 @@ CREATE TABLE DROP_DATABASE.Curso (
     duracion as DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
     precioMensual DECIMAL(18,2),
-    diaCursadoId int not null references DROP_DATABASE.Dia_Cursado(id),
+    diaCursadoId int not null references DROP_DATABASE.Dia_Semana(id),
 );
 
 CREATE TABLE DROP_DATABASE.Dia_Cursado (
@@ -416,7 +416,7 @@ INSERT INTO DROP_DATABASE.Turno (nombre)
 SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
 WHERE Curso_Turno IS NOT NULL;
 
-INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemana)
+INSERT INTO DROP_DATABASE.Dia_Semana (dia)
 VALUES
 ('Lunes'),
 ('Martes'),
