@@ -1,12 +1,9 @@
 USE GD2C2025;
-
 GO
 
 -- Crear esquema
 CREATE SCHEMA DROP_DATABASE;
 GO
-
-
 
 ------------------------------------------------------------
 -- TABLAS BASE
@@ -25,8 +22,7 @@ CREATE TABLE DROP_DATABASE.Provincia (
 CREATE TABLE DROP_DATABASE.Localidad (
     id INT IDENTITY(1,1) PRIMARY KEY,
     nombre NVARCHAR(255) NOT NULL,
-    provinciaId INT NOT NULL 
-        REFERENCES DROP_DATABASE.Provincia(id)
+    provinciaId INT NOT NULL REFERENCES DROP_DATABASE.Provincia(id)
 );
 
 CREATE TABLE DROP_DATABASE.Institucion (
@@ -67,15 +63,15 @@ CREATE TABLE DROP_DATABASE.Turno (
 -- CURSO Y RELACIONADOS
 ------------------------------------------------------------
 
-CREATE TABLE DROP_DATABASE.Dia_Cursado (
+CREATE TABLE DROP_DATABASE.Dia_Semana (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    diaSemana NVARCHAR(255) NOT NULL,
+    dia NVARCHAR(255) NOT NULL
 );
 
 CREATE TABLE DROP_DATABASE.Curso (
     codigoCurso BIGINT IDENTITY(1,1) PRIMARY KEY,
     sedeId INT NOT NULL REFERENCES DROP_DATABASE.Sede(id),
-    profesorId Bigint NOT NULL REFERENCES DROP_DATABASE.Profesor(id),
+    profesorId BIGINT NOT NULL REFERENCES DROP_DATABASE.Profesor(id),
     nombre NVARCHAR(255) NOT NULL,
     descripcion NVARCHAR(255) NOT NULL,
     categoriaId BIGINT NOT NULL REFERENCES DROP_DATABASE.Categoria(id),
@@ -84,7 +80,13 @@ CREATE TABLE DROP_DATABASE.Curso (
     duracion as DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
     precioMensual DECIMAL(18,2),
-    diaCursadoId int not null references DROP_DATABASE.Dia_Cursado(id),
+    diaCursadoId int not null references DROP_DATABASE.Dia_Semana(id),
+);
+
+CREATE TABLE DROP_DATABASE.Dia_Cursado (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
+    codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 
 CREATE TABLE DROP_DATABASE.Modulo (
@@ -99,14 +101,12 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
 
-
-
-
-
 USE GD2C2025;
 GO
+------------------------------------------------------------
+-- ALUMNO
+------------------------------------------------------------
 
--- ALUMNO--ELISEO
 CREATE TABLE DROP_DATABASE.Alumno (
     legajoAlumno BIGINT PRIMARY KEY,
     nombre NVARCHAR(255) NOT NULL,
@@ -130,11 +130,7 @@ SELECT DISTINCT
         Alumno_Apellido,
         Alumno_Dni,
         l.id AS localidad_id,
-<<<<<<< Updated upstream
-        Alumno_Domicilio,
-=======
         Alumno_Direccion,
->>>>>>> Stashed changes
         Alumno_FechaNacimiento,
         Alumno_Direccion,
         Alumno_Mail,
@@ -145,11 +141,6 @@ WHERE Alumno_Legajo IS NOT NULL;
 --AL EJECUTAR EL SCRIPT SE TIENE QUE TENER EN CUENTA EL ORDEN DE GUARDADO DE DATOS
 -- PARA QUE NO HAYA PROBLEMAS DE FK DEBIDO A QUE ALGUNOS DATOS DE ALUMNO DEPENDEN DE OTRAS TABLAS
 
-<<<<<<< Updated upstream
-
--- TP_ALUMNO (evaluaciones parciales / trabajos prácticos)
-=======
->>>>>>> Stashed changes
 CREATE TABLE DROP_DATABASE.TP_Alumno (
     id INT IDENTITY(1,1) PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
@@ -162,16 +153,6 @@ CREATE TABLE DROP_DATABASE.TP_Alumno (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
-INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
-SELECT DISTINCT
-        a.legajoAlumno,
-        m.TP_Alumno_Nota,
-        m.TP_Alumno_FechaEvaluacion,
-        c.codigoCurso
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-WHERE m.TP_Alumno_FechaEvaluacion IS NOT NULL;
 
 -- TP_ALUMNO (evaluaciones parciales / trabajos prácticos)
 INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
@@ -191,11 +172,7 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
     fechaInscripcion DATETIME2(6) NOT NULL DEFAULT (SYSDATETIME()),
     legajoAlumno BIGINT NOT NULL, 
     codigoCurso BIGINT NOT NULL,
-<<<<<<< Updated upstream
-    estado NVARCHAR(255) NULL Default ('pendiente'),
-=======
     estado VARCHAR(255) NULL Default ('pendiente'),
->>>>>>> Stashed changes
     fechaRespuesta DATETIME2(6) NULL,
     CONSTRAINT FK_InscripcionCurso_Alumno FOREIGN KEY (legajoAlumno)
         REFERENCES DROP_DATABASE.Alumno(legajoAlumno),
@@ -203,20 +180,7 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
-INSERT INTO DROP_DATABASE.Inscripcion_Curso (legajoAlumno, codigoCurso, estado, fechaRespuesta)
-SELECT DISTINCT
-        a.legajoAlumno,
-        c.codigoCurso,
-        m.Inscripcion_Curso_Estado,
-        m.Inscripcion_Curso_FechaRespuesta
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-WHERE m.Inscripcion_Curso_Estado IS NOT NULL;
 
-<<<<<<< Updated upstream
--- FINAL (mesa de examen)
-=======
 INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado, fechaRespuesta)
 SELECT DISTINCT
         m.Inscripcion_Fecha,
@@ -230,7 +194,6 @@ SELECT DISTINCT
 WHERE m.Inscripcion_Estado IS NOT NULL;
 
 -- FINAL
->>>>>>> Stashed changes
 CREATE TABLE DROP_DATABASE.Final (
     idFinal BIGINT IDENTITY(1,1) PRIMARY KEY,
     fecha DATETIME2(6) NULL,
@@ -241,20 +204,7 @@ CREATE TABLE DROP_DATABASE.Final (
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
-INSERT INTO DROP_DATABASE.Final (idFinal, fecha, hora, curso, descripcion)
-SELECT DISTINCT
-        m.Final_IdFinal,
-        m.Final_Fecha,
-        m.Final_Hora,
-        c.codigoCurso,
-        m.Final_Descripcion
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-WHERE m.Final_IdFinal IS NOT NULL;
 
-<<<<<<< Updated upstream
--- FINAL RENDIDO (registro de alumno en un final)
-=======
 INSERT INTO DROP_DATABASE.Final (fecha, hora, curso, descripcion)
 SELECT DISTINCT
         m.Examen_Final_Fecha,
@@ -265,7 +215,6 @@ SELECT DISTINCT
         INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
 
 -- FINAL RENDIDO
->>>>>>> Stashed changes
 CREATE TABLE DROP_DATABASE.Final_rendido (
     id BIGINT IDENTITY(1,1) PRIMARY KEY, --Agregue que sea autoIncremental porque no esta en la maestra
     legajoAlumno BIGINT NOT NULL,
@@ -281,19 +230,6 @@ CREATE TABLE DROP_DATABASE.Final_rendido (
         REFERENCES DROP_DATABASE.Profesor(id)
 );
 GO
-INSERT INTO DROP_DATABASE.Final_rendido (id, legajoAlumno, finalId, presente, nota, profesor)
-SELECT DISTINCT
-        m.Final_Rendido_Id,
-        a.legajoAlumno,
-        f.idFinal,
-        m.Final_Rendido_Presente,
-        m.Final_Rendido_Nota,
-        p.id AS profesor
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Final f ON f.idFinal = m.Final_Rendido_FinalId
-        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Final_Rendido_Profesor_Dni
-WHERE m.Final_Rendido_Id IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.Final_rendido (legajoAlumno, finalId, presente, nota, profesor)
 SELECT DISTINCT
@@ -311,8 +247,7 @@ SELECT DISTINCT
 CREATE TABLE DROP_DATABASE.Inscripcion_Final (
     InscripcionFinalId BIGINT PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
-    fechaInscripcion DATETIME2(6) NOT NULL
-        CONSTRAINT DF_InscripcionFinal_Fecha DEFAULT (SYSDATETIME()),
+    fechaInscripcion DATETIME2(6) NOT NULL CONSTRAINT DF_InscripcionFinal_Fecha DEFAULT (SYSDATETIME()),
     finalId BIGINT NOT NULL,
     presente BIT NULL,
     profesor BIGINT NULL,
@@ -324,19 +259,6 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Final (
         REFERENCES DROP_DATABASE.Profesor(id)
 );
 GO
-INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
-SELECT DISTINCT
-        m.Inscripcion_Final_Id,
-        a.legajoAlumno,
-        m.Inscripcion_Final_FechaInscripcion,
-        f.idFinal,
-        m.Inscripcion_Final_Presente,
-        p.id AS profesor
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Final f ON f.idFinal = m.Inscripcion_Final_FinalId
-        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Inscripcion_Final_Profesor_Dni
-WHERE m.Inscripcion_Final_Id IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
 SELECT DISTINCT
@@ -364,12 +286,13 @@ CREATE TABLE DROP_DATABASE.Encuesta (
 CREATE TABLE DROP_DATABASE.Pregunta (
     id INT IDENTITY(1,1) PRIMARY KEY,
     pregunta NVARCHAR(255),
+    nroPregunta INT CHECK (nroPregunta BETWEEN 1 AND 4),
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
 
 CREATE TABLE DROP_DATABASE.Encuesta_Respondida (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fechaRegistro DATETIME2(6) default(sysdatetime()),
+    fechaRegistro DATETIME2(6) DEFAULT (SYSDATETIME()),
     encuestaObservacion NVARCHAR(255) NOT NULL,
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
@@ -381,21 +304,15 @@ CREATE TABLE DROP_DATABASE.Detalle_Encuesta_Respondida (
     encuestaRespondidaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta_Respondida(id)
 );
 
-
--- Mariano
+------------------------------------------------------------
+-- PAGOS Y FACTURAS
+------------------------------------------------------------
 
 CREATE TABLE DROP_DATABASE.Medio_Pago (
     id INT IDENTITY(1,1) PRIMARY KEY,
     medioPago VARCHAR(255) NOT NULL
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Medio_Pago
-select DISTINCT Pago_MedioPago from gd_esquema.Maestra
-GO
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Factura (
     facturaNumero BIGINT PRIMARY KEY NOT NULL,
@@ -403,191 +320,81 @@ CREATE TABLE DROP_DATABASE.Factura (
     fechaVencimiento DATETIME2(6) NOT NULL,
     importeTotal DECIMAL(18,2) NOT NULL,
     legajoAlumno BIGINT NOT NULL,
-    CONSTRAINT fk_legajoAlumno
-        FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
+    CONSTRAINT fk_legajoAlumno FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Factura
-select DISTINCT
-        f.Factura_Numero,
-        f.Factura_FechaEmision,
-        f.Factura_FechaVencimiento,
-        f.Factura_Total,
-        a.legajoAlumno
-    from gd_esquema.Maestra f
-        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = f.Alumno_Legajo;
-GO
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Pago (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fecha DATETIME2(6) NOT NULL,
-    importe DECIMAL(18, 2) NOT NULL,
+    fecha DATETIME2(6) NOT NULL DEFAULT (SYSDATETIME()),
+    importe DECIMAL(18,2) NOT NULL,
     medioPagoId INT NOT NULL,
-    facturaNumero BIGINT NOT NULL,  
-    CONSTRAINT fk_medioPagoId
-        FOREIGN KEY (medioPagoId) REFERENCES DROP_DATABASE.Medio_Pago(id),
-    CONSTRAINT fk_facturaId
-        FOREIGN KEY (facturaNumero) REFERENCES DROP_DATABASE.Factura(facturaNumero)
+    facturaNumero BIGINT NOT NULL,
+    CONSTRAINT fk_medioPagoId FOREIGN KEY (medioPagoId) REFERENCES DROP_DATABASE.Medio_Pago(id),
+    CONSTRAINT fk_facturaId FOREIGN KEY (facturaNumero) REFERENCES DROP_DATABASE.Factura(facturaNumero)
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Pago
-select DISTINCT
-        m.Pago_Fecha,
-        m.Pago_Importe,
-        mp.id AS medioPagoId, 
-        f.facturaNumero
-    from gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
-        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero;
-GO
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Periodo (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    periodoAnio BIGINT default(year(sysdatetime())),
-    periodoMes BIGINT default(month(sysdatetime()))
+    periodoAnio BIGINT DEFAULT (YEAR(SYSDATETIME())),
+    periodoMes BIGINT DEFAULT (MONTH(SYSDATETIME()))
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Periodo
-select DISTINCT
-        Periodo_Anio, Periodo_Mes
-    from gd_esquema.Maestra;
-GO
-
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Detalle_Factura (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    codigoCurso BIGINT NOT NULL,
-    importe DECIMAL(18, 2) NOT NULL,
-    facturaNumero BIGINT NOT NULL,
-    periodoId INT NOT NULL,
-    CONSTRAINT fk_codigoCurso
-        FOREIGN KEY (codigoCurso) REFERENCES DROP_DATABASE.Curso(codigoCurso),
-    CONSTRAINT fk_facturaId
-        FOREIGN KEY (facturaNumero) REFERENCES DROP_DATABASE.Factura(facturaNumero),
-    CONSTRAINT fk_periodoId
-        FOREIGN KEY (periodoId) REFERENCES DROP_DATABASE.Periodo(id)
+    codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso),
+    importe DECIMAL(18,2) NOT NULL,
+    facturaNumero BIGINT NOT NULL REFERENCES DROP_DATABASE.Factura(facturaNumero),
+    periodoId INT NOT NULL REFERENCES DROP_DATABASE.Periodo(id)
 );
-GO
 
-insert into DROP_DATABASE.Detalle_Factura
-select DISTINCT
-        c.codigoCurso,
-        m.Detalle_Factura_Importe,
-        f.facturaNumero, 
-        p.id
-    from gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero
-        inner join DROP_DATABASE.Periodo p on p.periodoAnio = m.Periodo_Anio and p.periodoMes = m.Periodo_Mes;
-GO
+------------------------------------------------------------
+-- EVALUACIONES
+------------------------------------------------------------
 
 CREATE TABLE DROP_DATABASE.Evaluacion (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    fecha DATETIME2(6) NOT NULL
+    fecha DATETIME2(6) NOT NULL,
+    cursoId BIGINT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Evaluacion
-SELECT DISTINCT Evaluacion_Curso_fechaEvaluacion
-    FROM gd_esquema.Maestra
-WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL;
-GO
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Evaluacion_Rendida (
     id INT IDENTITY(1,1) PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
-    nota BIGINT NULL,           -- Puede ser NULL si no se evaluó
+    nota BIGINT NULL,
     presente BIT NOT NULL,
-    instancia BIGINT NOT NULL,
-    evaluacionId INT NOT NULL,
-    CONSTRAINT fk_evaluacionId
-        FOREIGN KEY (evaluacionId) REFERENCES DROP_DATABASE.Evaluacion(id),
-    CONSTRAINT fk_legajoAlumno
-        FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
+    instancia BIGINT NULL,
+    evaluacionId INT NOT NULL REFERENCES DROP_DATABASE.Evaluacion(id),
+    CONSTRAINT fk_legajoAlumno FOREIGN KEY (legajoAlumno) REFERENCES DROP_DATABASE.Alumno(legajoAlumno)
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Evaluacion_Rendida
-select DISTINCT
-        a.legajoAlumno,
-        m.Evaluacion_Curso_Nota,
-        m.Evaluacion_Curso_Presente,
-        m.Evaluacion_Curso_Instancia,
-        e.id
-    from gd_esquema.Maestra m
-        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = m.Alumno_Legajo
-        inner join DROP_DATABASE.Evaluacion e on e.fecha = m.Evaluacion_Curso_fechaEvaluacion;
-go
-=======
->>>>>>> Stashed changes
 
 CREATE TABLE DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (
     id INT IDENTITY(1,1) PRIMARY KEY,
-    evaluacionId INT NOT NULL,
-    modulo INT NOT NULL,
-    CONSTRAINT fk_evalId
-        FOREIGN KEY (evaluacionId) REFERENCES DROP_DATABASE.Evaluacion(id),
-    CONSTRAINT fk_modulo
-        FOREIGN KEY (modulo) REFERENCES DROP_DATABASE.Modulo_x_Curso(id)
+    evaluacionId INT NOT NULL REFERENCES DROP_DATABASE.Evaluacion(id),
+    modulo INT NOT NULL REFERENCES DROP_DATABASE.Modulo_x_Curso(id)
 );
 GO
-<<<<<<< Updated upstream
-
-insert into DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion
-select DISTINCT
-        e.id,
-        mxc.id
-    FROM gd_esquema.Maestra maestra
-        INNER JOIN DROP_DATABASE.Evaluacion e ON e.Fecha = maestra.Evaluacion_Curso_fechaEvaluacion
-        INNER JOIN DROP_DATABASE.Modulo m ON m.nombre = maestra.Modulo_Nombre
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = maestra.Curso_Codigo
-        INNER JOIN DROP_DATABASE.Modulo_X_Curso mxc ON mxc.moduloid = m.id AND mxc.cursoid = c.codigoCurso
-WHERE maestra.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
-    AND maestra.Modulo_Nombre IS NOT NULL
-    AND maestra.Curso_Codigo IS NOT NULL;
-
-=======
->>>>>>> Stashed changes
 
 --------------------------------------------------------------
 -- TRIGGERS
 --------------------------------------------------------------
-go;
+
+GO
 CREATE TRIGGER DROP_DATABASE.trg_validarRangoFechasCurso ON DROP_DATABASE.Curso
 FOR INSERT, UPDATE
 AS
 BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted
-        WHERE fechaInicio > fechaFin
-    )
+    IF EXISTS (SELECT 1 FROM inserted WHERE fechaInicio > fechaFin)
     BEGIN
         RAISERROR('La fecha de inicio no puede ser posterior a la fecha de fin.', 16, 1);
         ROLLBACK TRANSACTION;
     END
 END;
-
-go;
-
-
-go;
+GO
 
 CREATE TRIGGER DROP_DATABASE.trg_fecha_cambio_estado_inscripcion
 ON DROP_DATABASE.Inscripcion_Curso
@@ -604,24 +411,19 @@ BEGIN
 END;
 GO
 
---trigger que calcula y modifica la intancia de parcial en base a la cantidad de veces que este alumno intento rendir 
--- como me doy cuenta? seleccionando todas las evaliaciones que tengan TODOS los modulos tomados por la evaluacion actual 
---y contando en cuales de ellas existe una evaluacion rendida por el alumno  
-
 CREATE TRIGGER DROP_DATABASE.trg_asignarInstanciaParcial
 ON DROP_DATABASE.Evaluacion_Rendida
 AFTER INSERT
 AS
 BEGIN
     SET NOCOUNT ON;
-
     UPDATE er
     SET instancia = (
         SELECT COUNT(*) 
         FROM DROP_DATABASE.Evaluacion_Rendida er2
         WHERE er2.legajoAlumno = i.legajoAlumno
-          AND er2.id < i.id  -- evita contar la evaluación recién insertada
-          AND NOT EXISTS (   -- asegura que no falte ningún módulo de la evaluación actual
+          AND er2.id < i.id
+          AND NOT EXISTS (
                 SELECT 1
                 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx
                 WHERE mx.evaluacionId = i.evaluacionId
@@ -636,7 +438,7 @@ BEGIN
     FROM DROP_DATABASE.Evaluacion_Rendida er
     INNER JOIN inserted i ON er.id = i.id;
 END;
-GO;
+GO
 
 CREATE TRIGGER DROP_DATABASE.trg_unicaInscripcion
 ON DROP_DATABASE.Inscripcion_Curso
@@ -657,35 +459,8 @@ BEGIN
     INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
     SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
 END;
+GO
 
-<<<<<<< Updated upstream
-
-GO;
----------------------------------------------------
---index
----------------------------------------------------
-CREATE INDEX IX_Inscripcion_Curso_Alumno ON DROP_DATABASE.Inscripcion_Curso(legajoAlumno);
-CREATE INDEX IX_Inscripcion_Curso_Curso ON DROP_DATABASE.Inscripcion_Curso(codigoCurso);
-CREATE INDEX IX_TP_Alumno_Curso ON DROP_DATABASE.TP_Alumno(curso);
-CREATE INDEX IX_Factura_Alumno ON DROP_DATABASE.Factura(legajoAlumno);
-CREATE INDEX IX_Pago_Factura ON DROP_DATABASE.Pago(id);
-
----------------------------------------------------
---constraints
----------------------------------------------------
-
-ALTER TABLE DROP_DATABASE.Curso
-ADD CONSTRAINT CK_Curso_PrecioPositivo CHECK (precioMensual >= 0);
-
-ALTER TABLE DROP_DATABASE.Final_rendido
-ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
-
-    
-
-go; 
-
-=======
->>>>>>> Stashed changes
 ----------------------------------------------------------
 -- Inserts
 ----------------------------------------------------------
@@ -774,7 +549,7 @@ INSERT INTO DROP_DATABASE.Turno (nombre)
 SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
 WHERE Curso_Turno IS NOT NULL;
 
-INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemana)
+INSERT INTO DROP_DATABASE.Dia_Semana (dia)
 VALUES
 ('Lunes'),
 ('Martes'),
@@ -809,62 +584,6 @@ FROM gd_esquema.Maestra
 WHERE Alumno_Provincia IS NOT NULL
     AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
 
-------------------------------------------------------------
--- Cargar las localidades
-------------------------------------------------------------
-
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT Sede_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
-WHERE m.Sede_Localidad IS NOT NULL
-    AND m.Sede_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
-
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT m.Profesor_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
-WHERE m.Profesor_Localidad IS NOT NULL
-    AND m.Profesor_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
-
--- Acá hay algunos datos rotos. Por ejemplo pone ";bernador Andonaeghi", ";doy"
--- Pueden probar ejecutando el select sin la línea del insert
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT m.Alumno_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Alumno_Provincia
-WHERE m.Alumno_Localidad IS NOT NULL
-    AND m.Alumno_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
-
-INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
-SELECT DISTINCT 
-    Sede_Nombre,
-    Sede_Telefono,
-    Sede_Direccion,
-    Sede_Mail,
-    l.id,
-    i.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = Sede_Provincia
-    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Sede_Localidad AND l.provinciaId = p.id
-    JOIN DROP_DATABASE.Institucion i ON i.nombre = m.Institucion_Nombre
-WHERE m.Sede_Nombre IS NOT NULL;
-
-INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
-SELECT DISTINCT 
-    l.id,
-    m.Profesor_Apellido,
-    m.Profesor_Nombre,
-    m.Profesor_Dni,
-    m.Profesor_FechaNacimiento,
-    m.Profesor_Direccion,
-    m.Profesor_Telefono,
-    m.Profesor_Mail
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad
-
-
-
 insert Into DROP_DATABASE.Categoria(nombre)
 select distinct Curso_Categoria from gd_esquema.Maestra 
 
@@ -883,14 +602,6 @@ Insert Into DROP_DATABASE.Encuesta (cursoId)
 select maestra.Curso_Codigo from gd_esquema.Maestra maestra 
 where maestra.Encuesta_Pregunta1!=NULL or maestra.Encuesta_Pregunta2!=NULL or maestra.Encuesta_Pregunta3 !=NULL or maestra.Encuesta_Pregunta4!=NULL
 
-<<<<<<< Updated upstream
-Insert into DROP_DATABASE.Pregunta
-select
-
-Insert into DROP_DATABASE.Encuesta_Respondida
-
-Insert into DROP_DATABASE.Detalle_Encuesta_Respondida
-=======
 ------------------------------------------------------------
 -- Cargar las localidades
 ------------------------------------------------------------
@@ -914,13 +625,12 @@ GO
 ---------------------------------------------------
 -- MIGRACIÓN DE DATOS
 ---------------------------------------------------
->>>>>>> Stashed changes
 
+BEGIN TRY
+    BEGIN TRANSACTION;
 
+    -- acá van tus INSERTS desde gd_esquema.Maestra (ya corregidos en tu versión anterior)
 
-<<<<<<< Updated upstream
-
-=======
     COMMIT TRANSACTION;
 END TRY
 BEGIN CATCH
@@ -928,4 +638,3 @@ BEGIN CATCH
     PRINT 'Error en migración: ' + ERROR_MESSAGE();
 END CATCH;
 GO
->>>>>>> Stashed changes
