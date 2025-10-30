@@ -392,6 +392,7 @@ ALTER TABLE DROP_DATABASE.Final_rendido
 ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
 GO
 
+
 ---------------------------------------------------
 -- MIGRACIÓN DE DATOS
 ---------------------------------------------------
@@ -400,6 +401,57 @@ BEGIN TRY
     BEGIN TRANSACTION;
 
     
+INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
+SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
+FROM gd_esquema.Maestra
+WHERE Institucion_Nombre IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Turno (nombre)
+SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
+WHERE Curso_Turno IS NOT NULL;
+
+INSERT INTO DROP_DATABASE.Dia_Semana (dia)
+VALUES
+('Lunes'),
+('Martes'),
+('Miércoles'),
+('Jueves'),
+('Viernes'),
+('Sábado');
+    
+
+
+
+------------------------------------------------------------
+-- Cargar las provincias
+------------------------------------------------------------
+
+-- Cuidado, los datos que tiene la tabla maestra en Sede_Provincia por algún motivo no son provincias argentinas.
+-- Pero si no se insertan, no van a aparecer 2 Sedes
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Sede_Provincia
+FROM gd_esquema.Maestra
+WHERE Sede_Provincia IS NOT NULL
+    AND Sede_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Profesor_Provincia
+FROM gd_esquema.Maestra
+WHERE Profesor_Provincia IS NOT NULL
+    AND Profesor_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+INSERT INTO DROP_DATABASE.Provincia (nombre)
+SELECT DISTINCT Alumno_Provincia
+FROM gd_esquema.Maestra
+WHERE Alumno_Provincia IS NOT NULL
+    AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+
+
+
+------------------------------------------------------------
+-- Cargar las localidades
+------------------------------------------------------------
+
 INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
 SELECT DISTINCT Sede_Localidad, p.id
 FROM gd_esquema.Maestra m
@@ -414,8 +466,8 @@ FROM gd_esquema.Maestra m
 WHERE m.Profesor_Localidad IS NOT NULL
     AND m.Profesor_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
 
--- Acá hay algunos datos rotos. Por ejemplo pone ";bernador Andonaeghi", ";doy"
--- Pueden probar ejecutando el select sin la línea del insert
+
+
 
 INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
 SELECT DISTINCT m.Alumno_Localidad, p.id
@@ -424,19 +476,25 @@ FROM gd_esquema.Maestra m
 WHERE m.Alumno_Localidad IS NOT NULL
     AND m.Alumno_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
 
+
+
 INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
 SELECT DISTINCT 
-    Sede_Nombre,
-    Sede_Telefono,
-    Sede_Direccion,
-    Sede_Mail,
+    m.Sede_Nombre,
+    m.Sede_Telefono,
+    m.Sede_Direccion,
+    m.Sede_Mail,
     l.id,
     i.id
 FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = Sede_Provincia
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
     JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Sede_Localidad AND l.provinciaId = p.id
     JOIN DROP_DATABASE.Institucion i ON i.nombre = m.Institucion_Nombre
-WHERE m.Sede_Nombre IS NOT NULL;
+WHERE m.Sede_Nombre IS NOT NULL
+    AND m.Sede_Direccion IS NOT NULL
+    AND m.Sede_Provincia IS NOT NULL
+    AND m.Sede_Localidad IS NOT NULL
+    AND m.Institucion_Nombre IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
 SELECT DISTINCT 
@@ -449,33 +507,74 @@ SELECT DISTINCT
     m.Profesor_Telefono,
     m.Profesor_Mail
 FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad
-
+    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
+    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad AND l.provinciaId = p.id
+WHERE m.Profesor_Apellido IS NOT NULL
+    AND m.Profesor_Nombre IS NOT NULL
+    AND m.Profesor_Dni IS NOT NULL
+    AND m.Profesor_FechaNacimiento IS NOT NULL
+    AND m.Profesor_Direccion IS NOT NULL
+    AND m.Profesor_Telefono IS NOT NULL
+    AND m.Profesor_Mail IS NOT NULL
+    AND m.Profesor_Localidad IS NOT NULL
+    AND m.Profesor_Provincia IS NOT NULL;
 
 
 insert Into DROP_DATABASE.Categoria(nombre)
-select distinct Curso_Categoria from gd_esquema.Maestra 
+select distinct Curso_Categoria from gd_esquema.Maestra
+WHERE Curso_Categoria IS NOT NULL;
 
 
 SET IDENTITY_INSERT DROP_DATABASE.Curso ON;
 
 Insert Into DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
-select Curso_Codigo, sedeid, profeid, Curso_Nombre, Curso_Descripcion, cursocategid, Curso_FechaInicio,Curso_FechaFin, turno, Curso_PrecioMensual from gd_esquema.Maestra
-
+select distinct m.Curso_Codigo, s.id, p.id, m.Curso_Nombre, m.Curso_Descripcion, c.id, m.Curso_FechaInicio,m.Curso_FechaFin, t.id, m.Curso_PrecioMensual 
+    from gd_esquema.Maestra m
+        join DROP_DATABASE.Sede s on s.direccion=m.Sede_Direccion and s.nombre=m.Sede_Nombre
+        join DROP_DATABASE.Profesor p on p.apellido=m.Profesor_Apellido and p.dni=m.Profesor_Dni
+        join DROP_DATABASE.Categoria c on c.nombre=m.Curso_Categoria
+        join DROP_DATABASE.Turno t on t.nombre=m.Curso_Turno
+    WHERE m.Curso_Codigo IS NOT NULL
+      AND m.Sede_Direccion IS NOT NULL
+      AND m.Sede_Nombre IS NOT NULL
+      AND m.Profesor_Apellido IS NOT NULL
+      AND m.Profesor_Dni IS NOT NULL
+      AND m.Curso_Nombre IS NOT NULL
+      AND m.Curso_Categoria IS NOT NULL
+      AND m.Curso_Turno IS NOT NULL
+      AND m.Curso_FechaInicio IS NOT NULL
+      AND m.Curso_FechaFin IS NOT NULL
+      AND m.Curso_PrecioMensual IS NOT NULL;
+        
 SET IDENTITY_INSERT DROP_DATABASE.Curso OFF;
 
 
+INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
+SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
+    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+
+
 Insert Into DROP_DATABASE.Modulo (nombre, descripcion) 
-select Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
+select distinct Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
+WHERE Modulo_Nombre IS NOT NULL
+  AND Modulo_Descripcion IS NOT NULL;
+
 
 Insert Into DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
-select curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
+select distinct curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
                     join DROP_DATABASE.Curso curso on curso.codigoCurso=maestra.Curso_Codigo
                     join DROP_DATABASE.Modulo modulo on maestra.Modulo_Nombre=modulo.nombre AND maestra.Modulo_Descripcion=modulo.descripcion
+WHERE maestra.Curso_Codigo IS NOT NULL
+  AND maestra.Modulo_Nombre IS NOT NULL
+  AND maestra.Modulo_Descripcion IS NOT NULL;
+
 
 Insert Into DROP_DATABASE.Encuesta (cursoId)
-select maestra.Curso_Codigo from gd_esquema.Maestra maestra 
-where maestra.Encuesta_Pregunta1!=NULL or maestra.Encuesta_Pregunta2!=NULL or maestra.Encuesta_Pregunta3 !=NULL or maestra.Encuesta_Pregunta4!=NULL
+select distinct maestra.Curso_Codigo from gd_esquema.Maestra maestra 
+where (maestra.Encuesta_Pregunta1 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta1)) <> '')
+   OR (maestra.Encuesta_Pregunta2 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta2)) <> '')
+   OR (maestra.Encuesta_Pregunta3 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta3)) <> '')
+   OR (maestra.Encuesta_Pregunta4 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta4)) <> '');
 
 DECLARE @n INT = 1;
 
@@ -495,15 +594,23 @@ BEGIN
     JOIN DROP_DATABASE.Encuesta e
         ON m.Curso_Codigo = e.cursoId
     WHERE
-        CASE @n
+        (CASE @n
             WHEN 1 THEN m.Encuesta_Pregunta1
             WHEN 2 THEN m.Encuesta_Pregunta2
             WHEN 3 THEN m.Encuesta_Pregunta3
             WHEN 4 THEN m.Encuesta_Pregunta4
-        END IS NOT NULL;
+        END) IS NOT NULL
+        AND (CASE @n
+            WHEN 1 THEN LTRIM(RTRIM(m.Encuesta_Pregunta1))
+            WHEN 2 THEN LTRIM(RTRIM(m.Encuesta_Pregunta2))
+            WHEN 3 THEN LTRIM(RTRIM(m.Encuesta_Pregunta3))
+            WHEN 4 THEN LTRIM(RTRIM(m.Encuesta_Pregunta4))
+        END) <> '';
 
     SET @n = @n + 1;
 END;
+
+
 
 /*
 Insert into DROP_DATABASE.Pregunta (pregunta, nroPregunta,encuestaId)
@@ -520,48 +627,51 @@ select distinct m.Encuesta_Pregunta4, 4,e.encuestaId from gd_esquema.Maestra m j
 */
 
 
+
 INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
 SELECT DISTINCT 
     m.Encuesta_FechaRegistro, 
     m.Encuesta_Observacion, 
     e.encuestaId
 FROM gd_esquema.Maestra m
-JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
+INNER JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
 WHERE m.Encuesta_FechaRegistro IS NOT NULL;
+
+
+DECLARE @m INT = 1;
+WHILE @m <= 4
+BEGIN 
+
 
 
 INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
 SELECT DISTINCT
-    p.id,
-    CASE @n
+    p.id as preguntaId,
+    CASE @m
         WHEN 1 THEN m.Encuesta_Nota1
         WHEN 2 THEN m.Encuesta_Nota2
         WHEN 3 THEN m.Encuesta_Nota3
         WHEN 4 THEN m.Encuesta_Nota4
     END AS respuestaNota,
-    er.id  
+    er.id AS encuestaRespondidaId
 FROM gd_esquema.Maestra m
-JOIN DROP_DATABASE.Pregunta p ON
-    CASE @n
-        WHEN 1 THEN m.Encuesta_Pregunta1
-        WHEN 2 THEN m.Encuesta_Pregunta2
-        WHEN 3 THEN m.Encuesta_Pregunta3
-        WHEN 4 THEN m.Encuesta_Pregunta4
-    END = p.pregunta
-JOIN DROP_DATABASE.Encuesta_Respondida er
-    ON m.Encuesta_FechaRegistro = er.fechaRegistro
-   AND m.Encuesta_Observacion = er.encuestaObservacion
-WHERE
-    CASE @n
-        WHEN 1 THEN m.Encuesta_Nota1
-        WHEN 2 THEN m.Encuesta_Nota2
-        WHEN 3 THEN m.Encuesta_Nota3
-        WHEN 4 THEN m.Encuesta_Nota4
-    END IS NOT NULL;
+INNER JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
+    INNER JOIN DROP_DATABASE.Encuesta_Respondida er ON er.encuestaId = e.encuestaId 
+        AND er.fechaRegistro = m.Encuesta_FechaRegistro
+    INNER JOIN DROP_DATABASE.Pregunta p ON p.encuestaId = e.encuestaId 
+        AND p.nroPregunta = @m
+    WHERE
+        CASE @m
+            WHEN 1 THEN m.Encuesta_Nota1
+            WHEN 2 THEN m.Encuesta_Nota2
+            WHEN 3 THEN m.Encuesta_Nota3
+            WHEN 4 THEN m.Encuesta_Nota4
+        END IS NOT NULL;
+SET @m = @m + 1;
+END;
 
 
 
-select * from GD2C2025.gd_esquema.Maestra
 
     COMMIT TRANSACTION;
 END TRY
@@ -570,4 +680,6 @@ BEGIN CATCH
     PRINT 'Error en migración: ' + ERROR_MESSAGE();
 END CATCH;
 GO
+
+ 
 
