@@ -66,6 +66,13 @@ CREATE TABLE DROP_DATABASE.Turno (
 ------------------------------------------------------------
 -- CURSO Y RELACIONADOS
 ------------------------------------------------------------
+CREATE TABLE DROP_DATABASE.Dia_Semana (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    dia NVARCHAR(255) NOT NULL
+);
+
+
+
 
 CREATE TABLE DROP_DATABASE.Curso (
     codigoCurso BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -76,9 +83,16 @@ CREATE TABLE DROP_DATABASE.Curso (
     categoriaId BIGINT NOT NULL REFERENCES DROP_DATABASE.Categoria(id),
     fechaInicio DATETIME2(6) NOT NULL,
     fechaFin DATETIME2(6) NOT NULL,
-    duracion AS DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
+    duracion as DATEDIFF(MONTH, fechaInicio, fechaFin) PERSISTED,
     turnoId INT NOT NULL REFERENCES DROP_DATABASE.Turno(id),
     precioMensual DECIMAL(18,2)
+    
+);
+
+CREATE TABLE DROP_DATABASE.Dia_Cursado (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
+    codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
 
 CREATE TABLE DROP_DATABASE.Modulo (
@@ -93,16 +107,9 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
 
-CREATE TABLE DROP_DATABASE.Dia_Semana (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    dia NVARCHAR(255) NOT NULL
-);
 
-CREATE TABLE DROP_DATABASE.Dia_Cursado (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    diaSemanaId INT NOT NULL REFERENCES DROP_DATABASE.Dia_Semana(id),
-    codigoCurso BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso)
-);
+
+
 
 USE GD2C2025;
 GO
@@ -287,6 +294,7 @@ CREATE TABLE DROP_DATABASE.Encuesta (
 CREATE TABLE DROP_DATABASE.Pregunta (
     id INT IDENTITY(1,1) PRIMARY KEY,
     pregunta NVARCHAR(255),
+    nroPregunta int CHECK (nroPregunta BETWEEN 1 AND 4), 
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
 
@@ -297,7 +305,7 @@ CREATE TABLE DROP_DATABASE.Encuesta_Respondida (
     encuestaId INT NOT NULL REFERENCES DROP_DATABASE.Encuesta(encuestaId)
 );
 
-CREATE TABLE DROP_DATABASE.Detalle (
+CREATE TABLE DROP_DATABASE.Detalle_Encuesta_Respondida (
     id INT IDENTITY(1,1) PRIMARY KEY,
     preguntaId INT NOT NULL REFERENCES DROP_DATABASE.Pregunta(id),
     respuestaNota BIGINT CHECK (respuestaNota BETWEEN 1 AND 10),
@@ -599,14 +607,21 @@ SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
 WHERE Curso_Turno IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.Dia_Semana (dia)
-SELECT DISTINCT Curso_Dia FROM gd_esquema.Maestra
-WHERE Curso_Dia IS NOT NULL;
+VALUES
+('Lunes'),
+('Martes'),
+('Miércoles'),
+('Jueves'),
+('Viernes'),
+('Sábado');
+
 
 -- Acá hay que ver si para código curso usamos el que ya viene en la tabla maestra
 -- (como en este código) o si usamos IDENTITY como está definido la PK de Curso.
 INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
 SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
     JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+
 
 ------------------------------------------------------------
 -- Cargar las provincias
@@ -652,6 +667,7 @@ WHERE m.Profesor_Localidad IS NOT NULL
 
 -- Acá hay algunos datos rotos. Por ejemplo pone ";bernador Andonaeghi", ";doy"
 -- Pueden probar ejecutando el select sin la línea del insert
+
 INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
 SELECT DISTINCT m.Alumno_Localidad, p.id
 FROM gd_esquema.Maestra m
@@ -687,3 +703,113 @@ FROM gd_esquema.Maestra m
     JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad
 
 
+
+insert Into DROP_DATABASE.Categoria(nombre)
+select distinct Curso_Categoria from gd_esquema.Maestra 
+
+
+SET IDENTITY_INSERT DROP_DATABASE.Curso ON;
+
+Insert Into DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
+select Curso_Codigo, sedeid, profeid, Curso_Nombre, Curso_Descripcion, cursocategid, Curso_FechaInicio,Curso_FechaFin, turno, Curso_PrecioMensual from gd_esquema.Maestra
+
+SET IDENTITY_INSERT DROP_DATABASE.Curso OFF;
+
+
+Insert Into DROP_DATABASE.Modulo (nombre, descripcion) 
+select Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
+
+Insert Into DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
+select curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
+                    join DROP_DATABASE.Curso curso on curso.codigoCurso=maestra.Curso_Codigo
+                    join DROP_DATABASE.Modulo modulo on maestra.Modulo_Nombre=modulo.nombre AND maestra.Modulo_Descripcion=modulo.descripcion
+
+Insert Into DROP_DATABASE.Encuesta (cursoId)
+select maestra.Curso_Codigo from gd_esquema.Maestra maestra 
+where maestra.Encuesta_Pregunta1!=NULL or maestra.Encuesta_Pregunta2!=NULL or maestra.Encuesta_Pregunta3 !=NULL or maestra.Encuesta_Pregunta4!=NULL
+
+DECLARE @n INT = 1;
+
+WHILE @n <= 4
+BEGIN
+    INSERT INTO DROP_DATABASE.Pregunta (pregunta, nroPregunta, encuestaId)
+    SELECT DISTINCT
+        CASE @n
+            WHEN 1 THEN m.Encuesta_Pregunta1
+            WHEN 2 THEN m.Encuesta_Pregunta2
+            WHEN 3 THEN m.Encuesta_Pregunta3
+            WHEN 4 THEN m.Encuesta_Pregunta4
+        END AS pregunta,
+        @n AS nroPregunta,
+        e.encuestaId
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Encuesta e
+        ON m.Curso_Codigo = e.cursoId
+    WHERE
+        CASE @n
+            WHEN 1 THEN m.Encuesta_Pregunta1
+            WHEN 2 THEN m.Encuesta_Pregunta2
+            WHEN 3 THEN m.Encuesta_Pregunta3
+            WHEN 4 THEN m.Encuesta_Pregunta4
+        END IS NOT NULL;
+
+    SET @n = @n + 1;
+END;
+
+/*
+Insert into DROP_DATABASE.Pregunta (pregunta, nroPregunta,encuestaId)
+select distinct m.Encuesta_Pregunta1, 1,e.encuestaId from gd_esquema.Maestra m join DROP_DATABASE.Encuesta e on m.Curso_Codigo=e.cursoId
+
+Insert into DROP_DATABASE.Pregunta (pregunta,nroPregunta, encuestaId)
+select distinct m.Encuesta_Pregunta2, 2,e.encuestaId from gd_esquema.Maestra m join DROP_DATABASE.Encuesta e on m.Curso_Codigo=e.cursoId
+
+Insert into DROP_DATABASE.Pregunta (pregunta,nroPregunta, encuestaId)
+select distinct m.Encuesta_Pregunta3, 3,e.encuestaId from gd_esquema.Maestra m join DROP_DATABASE.Encuesta e on m.Curso_Codigo=e.cursoId
+
+Insert into DROP_DATABASE.Pregunta (pregunta,nroPregunta, encuestaId)
+select distinct m.Encuesta_Pregunta4, 4,e.encuestaId from gd_esquema.Maestra m join DROP_DATABASE.Encuesta e on m.Curso_Codigo=e.cursoId
+*/
+
+
+INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
+SELECT DISTINCT 
+    m.Encuesta_FechaRegistro, 
+    m.Encuesta_Observacion, 
+    e.encuestaId
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
+WHERE m.Encuesta_FechaRegistro IS NOT NULL;
+
+
+INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
+SELECT DISTINCT
+    p.id,
+    CASE @n
+        WHEN 1 THEN m.Encuesta_Nota1
+        WHEN 2 THEN m.Encuesta_Nota2
+        WHEN 3 THEN m.Encuesta_Nota3
+        WHEN 4 THEN m.Encuesta_Nota4
+    END AS respuestaNota,
+    er.id  
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Pregunta p ON
+    CASE @n
+        WHEN 1 THEN m.Encuesta_Pregunta1
+        WHEN 2 THEN m.Encuesta_Pregunta2
+        WHEN 3 THEN m.Encuesta_Pregunta3
+        WHEN 4 THEN m.Encuesta_Pregunta4
+    END = p.pregunta
+JOIN DROP_DATABASE.Encuesta_Respondida er
+    ON m.Encuesta_FechaRegistro = er.fechaRegistro
+   AND m.Encuesta_Observacion = er.encuestaObservacion
+WHERE
+    CASE @n
+        WHEN 1 THEN m.Encuesta_Nota1
+        WHEN 2 THEN m.Encuesta_Nota2
+        WHEN 3 THEN m.Encuesta_Nota3
+        WHEN 4 THEN m.Encuesta_Nota4
+    END IS NOT NULL;
+
+
+
+select * from GD2C2025.gd_esquema.Maestra
