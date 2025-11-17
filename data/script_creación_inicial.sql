@@ -99,7 +99,7 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     cursoId BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso),
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
-GO
+
 ------------------------------------------------------------
 -- ALUMNO
 ------------------------------------------------------------
@@ -722,15 +722,12 @@ WHERE maestra.Curso_Codigo IS NOT NULL
   AND maestra.Modulo_Nombre IS NOT NULL
   AND maestra.Modulo_Descripcion IS NOT NULL;
 
-  commit transaction;
 ------------------------------------------------------------
 -- Cargar los Alumnos
 ------------------------------------------------------------
-
-
 INSERT INTO DROP_DATABASE.Alumno (legajoAlumno, nombre, apellido, dni, localidad_id, domicilio, fechaNacimiento, direccion, mail, telefono)
-SELECT 
-        d.Alumno_Legajo,
+SELECT DISTINCT
+        Alumno_Legajo,
         Alumno_Nombre,
         Alumno_Apellido,
         Alumno_Dni,
@@ -740,11 +737,9 @@ SELECT
         Alumno_Direccion,
         Alumno_Mail,
         Alumno_Telefono
-    FROM (Select DISTINCT Alumno_Legajo from gd_esquema.Maestra) as d
-        JOIN gd_esquema.Maestra m on d.Alumno_Legajo=m.Alumno_Legajo
+    FROM gd_esquema.Maestra m
         LEFT JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Alumno_Localidad
-    WHERE d.Alumno_Legajo IS NOT NULL;
-
+WHERE Alumno_Legajo IS NOT NULL;
 
 ------------------------------------------------------------
 -- Cargar los TP_Alumno
@@ -970,8 +965,8 @@ select DISTINCT
 ------------------------------------------------------------
 -- Cargar los Evaluacion
 ------------------------------------------------------------
-insert into DROP_DATABASE.Evaluacion(fecha, cursoId)
-SELECT DISTINCT Evaluacion_Curso_fechaEvaluacion, Curso_Codigo
+insert into DROP_DATABASE.Evaluacion
+SELECT DISTINCT Evaluacion_Curso_fechaEvaluacion
     FROM gd_esquema.Maestra
 WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL;
 
