@@ -99,7 +99,7 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     cursoId BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso),
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
-
+GO
 ------------------------------------------------------------
 -- ALUMNO
 ------------------------------------------------------------
@@ -136,7 +136,7 @@ GO
 
 -- INSCRIPCION A CURSO
 CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
-    Inscripcion_Numero BIGINT PRIMARY KEY,  -- ESTA ES LA PK REAL
+    Inscripcion_Numero BIGINT identity(1,1) PRIMARY KEY,  -- ESTA ES LA PK REAL
     fechaInscripcion DATETIME2(6) NOT NULL DEFAULT (SYSDATETIME()),
     legajoAlumno BIGINT NOT NULL, 
     codigoCurso BIGINT NOT NULL,
@@ -151,7 +151,7 @@ GO
 
 -- FINAL
 CREATE TABLE DROP_DATABASE.Final (
-    Inscripcion_Final_Nro BIGINT PRIMARY KEY,  
+    Final_Nro BIGINT identity (1,1) PRIMARY KEY,  
     fecha DATETIME2(6) NULL,
     hora NVARCHAR(255) NULL,
     curso BIGINT NULL,
@@ -163,7 +163,7 @@ GO
 
 -- FINAL RENDIDO
 CREATE TABLE DROP_DATABASE.Final_rendido (
-    id BIGINT PRIMARY KEY,
+    id BIGINT identity(1,1)PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
     finalId BIGINT NOT NULL,
     presente BIT NULL,
@@ -172,7 +172,7 @@ CREATE TABLE DROP_DATABASE.Final_rendido (
     CONSTRAINT FK_FinalRendido_Alumno FOREIGN KEY (legajoAlumno)
         REFERENCES DROP_DATABASE.Alumno(legajoAlumno),
     CONSTRAINT FK_FinalRendido_Final FOREIGN KEY (finalId)
-        REFERENCES DROP_DATABASE.Final(Inscripcion_Final_Nro),
+        REFERENCES DROP_DATABASE.Final(Final_Nro),
     CONSTRAINT FK_FinalRendido_Profesor FOREIGN KEY (profesor)
         REFERENCES DROP_DATABASE.Profesor(id)
 );
@@ -180,7 +180,7 @@ GO
 
 -- INSCRIPCION A FINAL
 CREATE TABLE DROP_DATABASE.Inscripcion_Final (
-    InscripcionFinalId BIGINT PRIMARY KEY,
+    InscripcionFinalId BIGINT identity(1,1) PRIMARY KEY,
     legajoAlumno BIGINT NOT NULL,
     fechaInscripcion DATETIME2(6) NOT NULL CONSTRAINT DF_InscripcionFinal_Fecha DEFAULT (SYSDATETIME()),
     finalId BIGINT NOT NULL,
@@ -189,7 +189,7 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Final (
     CONSTRAINT FK_InscripcionFinal_Alumno FOREIGN KEY (legajoAlumno)
         REFERENCES DROP_DATABASE.Alumno(legajoAlumno),
     CONSTRAINT FK_InscripcionFinal_Final FOREIGN KEY (finalId)
-        REFERENCES DROP_DATABASE.Final(Inscripcion_Final_Nro),
+        REFERENCES DROP_DATABASE.Final(Final_Nro),
     CONSTRAINT FK_InscripcionFinal_Profesor FOREIGN KEY (profesor)
         REFERENCES DROP_DATABASE.Profesor(id)
 );
@@ -298,51 +298,8 @@ GO
 -- TRIGGERS
 --------------------------------------------------------------
 -- Validar que un alumno no se inscriba a un curso que ya finalizó
-CREATE TRIGGER DROP_DATABASE.trg_validarCursoActivoInscripcion
-ON DROP_DATABASE.Inscripcion_Curso
-INSTEAD OF INSERT
-AS
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = i.codigoCurso
-        WHERE c.fechaFin < GETDATE()
-    )
-    BEGIN
-        RAISERROR('No se puede inscribir a un curso que ya finalizó.', 16, 1);
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
-    IF EXISTS (
-        SELECT 1
-        FROM DROP_DATABASE.Inscripcion_Curso ic
-        JOIN inserted i ON ic.legajoAlumno = i.legajoAlumno AND ic.codigoCurso = i.codigoCurso
-    )
-    BEGIN
-        RAISERROR('El alumno ya está inscripto en este curso.', 16, 1);
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
 
-    INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
-    SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
-END;
-GO
 
--- Validar que la fecha de evaluación no sea futura
-CREATE TRIGGER DROP_DATABASE.trg_validarFechaEvaluacion
-ON DROP_DATABASE.Evaluacion
-FOR INSERT, UPDATE
-AS
-BEGIN
-    IF EXISTS (SELECT 1 FROM inserted WHERE fecha > GETDATE())
-    BEGIN
-        RAISERROR('La fecha de evaluación no puede ser futura.', 16, 1);
-        ROLLBACK TRANSACTION;
-    END
-END;
-GO
 
 -- Validar que el alumno esté inscripto antes de rendir evaluación
 CREATE TRIGGER DROP_DATABASE.trg_validarInscripcionEvaluacion
@@ -536,474 +493,711 @@ CHECK (fechaNacimiento <= GETDATE() AND fechaNacimiento > '1900-01-01');
 ---------------------------------------------------
 -- MIGRACIÓN DE DATOS
 ---------------------------------------------------
+
 BEGIN TRY
-    BEGIN TRANSACTION;
-    
-INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
-SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
-FROM gd_esquema.Maestra
-WHERE Institucion_Nombre IS NOT NULL;
+    BEGIN TRAN;
 
-INSERT INTO DROP_DATABASE.Turno (nombre)
-SELECT DISTINCT Curso_Turno FROM gd_esquema.Maestra
-WHERE Curso_Turno IS NOT NULL;
+    -- Instituciones
+    INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
+    SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
+    FROM gd_esquema.Maestra
+    WHERE Institucion_Nombre IS NOT NULL
+      AND Institucion_Nombre NOT IN (SELECT nombre FROM DROP_DATABASE.Institucion);
 
-INSERT INTO DROP_DATABASE.Dia_Semana (dia)
-VALUES
-('Lunes'),
-('Martes'),
-('Miércoles'),
-('Jueves'),
-('Viernes'),
-('Sábado');
-    
-------------------------------------------------------------
--- Cargar las provincias
-------------------------------------------------------------
+    -- Turnos
+    INSERT INTO DROP_DATABASE.Turno (nombre)
+    SELECT DISTINCT Curso_Turno
+    FROM gd_esquema.Maestra
+    WHERE Curso_Turno IS NOT NULL
+      AND Curso_Turno NOT IN (SELECT nombre FROM DROP_DATABASE.Turno);
 
--- Cuidado, los datos que tiene la tabla maestra en Sede_Provincia por algún motivo no son provincias argentinas.
--- Pero si no se insertan, no van a aparecer 2 Sedes
-INSERT INTO DROP_DATABASE.Provincia (nombre)
-SELECT DISTINCT Sede_Provincia
-FROM gd_esquema.Maestra
-WHERE Sede_Provincia IS NOT NULL
-    AND Sede_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+    -- Días de la semana (si no existen)
+    IF NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Dia_Semana WHERE dia = 'Lunes')
+    BEGIN
+        INSERT INTO DROP_DATABASE.Dia_Semana (dia) VALUES
+        ('Lunes'),('Martes'),('Miércoles'),('Jueves'),('Viernes'),('Sábado');
+    END
 
-INSERT INTO DROP_DATABASE.Provincia (nombre)
-SELECT DISTINCT Profesor_Provincia
-FROM gd_esquema.Maestra
-WHERE Profesor_Provincia IS NOT NULL
-    AND Profesor_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+    -- Provincias (tres fuentes)
+    INSERT INTO DROP_DATABASE.Provincia (nombre)
+    SELECT DISTINCT Sede_Provincia
+    FROM gd_esquema.Maestra
+    WHERE Sede_Provincia IS NOT NULL
+      AND Sede_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
 
-INSERT INTO DROP_DATABASE.Provincia (nombre)
-SELECT DISTINCT Alumno_Provincia
-FROM gd_esquema.Maestra
-WHERE Alumno_Provincia IS NOT NULL
-    AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
+    INSERT INTO DROP_DATABASE.Provincia (nombre)
+    SELECT DISTINCT Profesor_Provincia
+    FROM gd_esquema.Maestra
+    WHERE Profesor_Provincia IS NOT NULL
+      AND Profesor_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
 
+    INSERT INTO DROP_DATABASE.Provincia (nombre)
+    SELECT DISTINCT Alumno_Provincia
+    FROM gd_esquema.Maestra
+    WHERE Alumno_Provincia IS NOT NULL
+      AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
 
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en bloque 1: ' + ERROR_MESSAGE();
+END CATCH;
+GO
 
-------------------------------------------------------------
--- Cargar las localidades
-------------------------------------------------------------
+/*
+Bloque 2: Localidades (con normalización y sin BEGIN TRAN anidados)
+*/
+BEGIN TRY
+    BEGIN TRAN;
 
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT Sede_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
-WHERE m.Sede_Localidad IS NOT NULL
-    AND m.Sede_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+    ;WITH RawSrc AS (
+        SELECT 
+            LTRIM(RTRIM(REPLACE(m.Sede_Localidad, ';', ''))) AS nombre_clean,
+            p.id AS provinciaId
+        FROM gd_esquema.Maestra m
+        LEFT JOIN DROP_DATABASE.Provincia p
+            ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre, ';', '')))) 
+               COLLATE Latin1_General_CI_AI
+               = UPPER(LTRIM(RTRIM(REPLACE(m.Sede_Provincia, ';', ''))))
+               COLLATE Latin1_General_CI_AI
+        WHERE m.Sede_Localidad IS NOT NULL
 
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT m.Profesor_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
-WHERE m.Profesor_Localidad IS NOT NULL
-    AND m.Profesor_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+        UNION ALL
 
+        SELECT 
+            LTRIM(RTRIM(REPLACE(m.Profesor_Localidad, ';', ''))),
+            p.id
+        FROM gd_esquema.Maestra m
+        JOIN DROP_DATABASE.Provincia p
+            ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre, ';', ''))))
+               COLLATE Latin1_General_CI_AI
+               = UPPER(LTRIM(RTRIM(REPLACE(m.Profesor_Provincia, ';', ''))))
+               COLLATE Latin1_General_CI_AI
+        WHERE m.Profesor_Localidad IS NOT NULL
 
+        UNION ALL
 
+        SELECT 
+            LTRIM(RTRIM(REPLACE(m.Alumno_Localidad, ';', ''))),
+            p.id
+        FROM gd_esquema.Maestra m
+        JOIN DROP_DATABASE.Provincia p
+            ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre, ';', ''))))
+               COLLATE Latin1_General_CI_AI
+               = UPPER(LTRIM(RTRIM(REPLACE(m.Alumno_Provincia, ';', ''))))
+               COLLATE Latin1_General_CI_AI
+        WHERE m.Alumno_Localidad IS NOT NULL
+    ),
+    DistinctSrc AS (
+        SELECT DISTINCT nombre_clean, provinciaId
+        FROM RawSrc
+    ),
+    Ranked AS (
+        SELECT 
+            nombre_clean,
+            provinciaId,
+            ROW_NUMBER() OVER (PARTITION BY nombre_clean ORDER BY provinciaId) AS rn
+        FROM DistinctSrc
+    ),
+    ToInsert AS (
+        SELECT r.nombre_clean, r.provinciaId
+        FROM Ranked r
+        LEFT JOIN DROP_DATABASE.Localidad l
+            ON r.nombre_clean COLLATE Latin1_General_CI_AI
+               = LTRIM(RTRIM(l.nombre)) COLLATE Latin1_General_CI_AI
+        WHERE r.rn = 1
+          AND l.nombre IS NULL
+    )
+    INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
+    SELECT nombre_clean, provinciaId
+    FROM ToInsert;
 
-INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
-SELECT DISTINCT m.Alumno_Localidad, p.id
-FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Alumno_Provincia
-WHERE m.Alumno_Localidad IS NOT NULL
-    AND m.Alumno_Localidad NOT IN (SELECT nombre FROM DROP_DATABASE.Localidad);
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error al insertar localidades: ' + ERROR_MESSAGE();
+END CATCH;
+GO
 
+/*
+Bloque 3: Sedes y Profesores
+-- Aseguramos que Sede y Profesor sólo se inserten si las FK de Provincia/Localidad/Institucion existen.
+*/
+BEGIN TRY
+    BEGIN TRAN;
 
-    
-------------------------------------------------------------
--- Cargar las sedes
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
-SELECT DISTINCT 
-    m.Sede_Nombre,
-    m.Sede_Telefono,
-    m.Sede_Direccion,
-    m.Sede_Mail,
-    l.id,
-    i.id
-FROM gd_esquema.Maestra m
+    -- Sedes: hacemos join con tablas destino para asegurar existencia
+    INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
+    SELECT DISTINCT 
+        m.Sede_Nombre,
+        m.Sede_Telefono,
+        m.Sede_Direccion,
+        m.Sede_Mail,
+        l.id,
+        i.id
+    FROM gd_esquema.Maestra m
     JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
     JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Sede_Localidad AND l.provinciaId = p.id
     JOIN DROP_DATABASE.Institucion i ON i.nombre = m.Institucion_Nombre
-WHERE m.Sede_Nombre IS NOT NULL
-    AND m.Sede_Direccion IS NOT NULL
-    AND m.Sede_Provincia IS NOT NULL
-    AND m.Sede_Localidad IS NOT NULL
-    AND m.Institucion_Nombre IS NOT NULL;
+    WHERE m.Sede_Nombre IS NOT NULL
+      AND m.Sede_Direccion IS NOT NULL
+      AND m.Sede_Provincia IS NOT NULL
+      AND m.Sede_Localidad IS NOT NULL
+      AND m.Institucion_Nombre IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Sede s2
+          WHERE s2.nombre = m.Sede_Nombre AND s2.direccion = m.Sede_Direccion
+      );
 
-------------------------------------------------------------
--- Cargar los profesores
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
-SELECT DISTINCT 
-    l.id,
-    m.Profesor_Apellido,
-    m.Profesor_Nombre,
-    m.Profesor_Dni,
-    m.Profesor_FechaNacimiento,
-    m.Profesor_Direccion,
-    m.Profesor_Telefono,
-    m.Profesor_Mail
-FROM gd_esquema.Maestra m
+    -- Profesores: solo insertar cuando la localidad existe
+    INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
+    SELECT DISTINCT 
+        l.id,
+        m.Profesor_Apellido,
+        m.Profesor_Nombre,
+        m.Profesor_Dni,
+        TRY_CONVERT(datetime2(6), m.Profesor_FechaNacimiento),
+        m.Profesor_Direccion,
+        m.Profesor_Telefono,
+        m.Profesor_Mail
+    FROM gd_esquema.Maestra m
     JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
     JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad AND l.provinciaId = p.id
-WHERE m.Profesor_Apellido IS NOT NULL
-    AND m.Profesor_Nombre IS NOT NULL
-    AND m.Profesor_Dni IS NOT NULL
-    AND m.Profesor_FechaNacimiento IS NOT NULL
-    AND m.Profesor_Direccion IS NOT NULL
-    AND m.Profesor_Telefono IS NOT NULL
-    AND m.Profesor_Mail IS NOT NULL
-    AND m.Profesor_Localidad IS NOT NULL
-    AND m.Profesor_Provincia IS NOT NULL;
-
-
-------------------------------------------------------------
--- Cargar las categorias
-------------------------------------------------------------    
-insert Into DROP_DATABASE.Categoria(nombre)
-select distinct Curso_Categoria from gd_esquema.Maestra
-WHERE Curso_Categoria IS NOT NULL;
-
-
-
-------------------------------------------------------------
--- Cargar los cursos
-------------------------------------------------------------
-SET IDENTITY_INSERT DROP_DATABASE.Curso ON;
-
-Insert Into DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
-select distinct m.Curso_Codigo, s.id, p.id, m.Curso_Nombre, m.Curso_Descripcion, c.id, m.Curso_FechaInicio,m.Curso_FechaFin, t.id, m.Curso_PrecioMensual 
-    from gd_esquema.Maestra m
-        join DROP_DATABASE.Sede s on s.direccion=m.Sede_Direccion and s.nombre=m.Sede_Nombre
-        join DROP_DATABASE.Profesor p on p.apellido=m.Profesor_Apellido and p.dni=m.Profesor_Dni
-        join DROP_DATABASE.Categoria c on c.nombre=m.Curso_Categoria
-        join DROP_DATABASE.Turno t on t.nombre=m.Curso_Turno
-    WHERE m.Curso_Codigo IS NOT NULL
-      AND m.Sede_Direccion IS NOT NULL
-      AND m.Sede_Nombre IS NOT NULL
-      AND m.Profesor_Apellido IS NOT NULL
+    WHERE m.Profesor_Apellido IS NOT NULL
+      AND m.Profesor_Nombre IS NOT NULL
       AND m.Profesor_Dni IS NOT NULL
-      AND m.Curso_Nombre IS NOT NULL
-      AND m.Curso_Categoria IS NOT NULL
-      AND m.Curso_Turno IS NOT NULL
-      AND m.Curso_FechaInicio IS NOT NULL
-      AND m.Curso_FechaFin IS NOT NULL
-      AND m.Curso_PrecioMensual IS NOT NULL;
-        
-SET IDENTITY_INSERT DROP_DATABASE.Curso OFF;
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Profesor pr WHERE pr.dni = m.Profesor_Dni
+      );
 
-------------------------------------------------------------
--- Cargar los dias cursados
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
-SELECT DISTINCT ds.id, Curso_Codigo FROM gd_esquema.Maestra
-    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = Curso_Dia 
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en sedes/profesores: ' + ERROR_MESSAGE();
+END CATCH;
+GO
 
-------------------------------------------------------------
--- Cargar los Modulos
-------------------------------------------------------------
-Insert Into DROP_DATABASE.Modulo (nombre, descripcion) 
-select distinct Modulo_Nombre, Modulo_Descripcion from gd_esquema.Maestra
-WHERE Modulo_Nombre IS NOT NULL
-  AND Modulo_Descripcion IS NOT NULL;
+/*
+Bloque 4: Categorias, Modulos, Turnos ya cargados; ahora Cursos
+Asegurate de que las joins con Sede y Profesor funcionen; si fallan, esos cursos no existirán y por eso fallaban luego.
+*/
+BEGIN TRY
+    BEGIN TRAN;
 
-------------------------------------------------------------
--- Cargar los Modulo_x_Curso
-------------------------------------------------------------
-Insert Into DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
-select distinct curso.codigoCurso, modulo.id from gd_esquema.Maestra maestra
-                    join DROP_DATABASE.Curso curso on curso.codigoCurso=maestra.Curso_Codigo
-                    join DROP_DATABASE.Modulo modulo on maestra.Modulo_Nombre=modulo.nombre AND maestra.Modulo_Descripcion=modulo.descripcion
-WHERE maestra.Curso_Codigo IS NOT NULL
-  AND maestra.Modulo_Nombre IS NOT NULL
-  AND maestra.Modulo_Descripcion IS NOT NULL;
+    INSERT INTO DROP_DATABASE.Categoria(nombre)
+    SELECT DISTINCT Curso_Categoria FROM gd_esquema.Maestra
+    WHERE Curso_Categoria IS NOT NULL
+      AND Curso_Categoria NOT IN (SELECT nombre FROM DROP_DATABASE.Categoria);
 
-------------------------------------------------------------
--- Cargar los Alumnos
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Alumno (legajoAlumno, nombre, apellido, dni, localidad_id, domicilio, fechaNacimiento, direccion, mail, telefono)
-SELECT DISTINCT
-        Alumno_Legajo,
-        Alumno_Nombre,
-        Alumno_Apellido,
-        Alumno_Dni,
-        l.id AS localidad_id,
-        Alumno_Direccion,
-        Alumno_FechaNacimiento,
-        Alumno_Direccion,
-        Alumno_Mail,
-        Alumno_Telefono
+    -- Cursos: usamos JOINs robustos y verificamos existencia de Sede y Profesor y Categoria y Turno.
+    SET IDENTITY_INSERT DROP_DATABASE.Curso ON;
+
+    INSERT INTO DROP_DATABASE.Curso (codigoCurso, sedeId, profesorId, nombre, descripcion, categoriaId, fechaInicio, fechaFin, turnoId, precioMensual)
+    SELECT DISTINCT 
+        m.Curso_Codigo,
+        s.id,
+        pr.id,
+        m.Curso_Nombre,
+        m.Curso_Descripcion,
+        c.id,
+        TRY_CONVERT(datetime2(6), m.Curso_FechaInicio),
+        TRY_CONVERT(datetime2(6), m.Curso_FechaFin),
+        t.id,
+        m.Curso_PrecioMensual 
     FROM gd_esquema.Maestra m
-        LEFT JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Alumno_Localidad
-WHERE Alumno_Legajo IS NOT NULL;
+    JOIN DROP_DATABASE.Sede s ON s.direccion = m.Sede_Direccion AND s.nombre = m.Sede_Nombre
+    JOIN DROP_DATABASE.Profesor pr ON pr.apellido = m.Profesor_Apellido AND pr.dni = m.Profesor_Dni
+    JOIN DROP_DATABASE.Categoria c ON c.nombre = m.Curso_Categoria
+    JOIN DROP_DATABASE.Turno t ON t.nombre = m.Curso_Turno
+    WHERE m.Curso_Codigo IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Curso c2 WHERE c2.codigoCurso = m.Curso_Codigo);
 
-------------------------------------------------------------
--- Cargar los TP_Alumno
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
-SELECT DISTINCT
+    SET IDENTITY_INSERT DROP_DATABASE.Curso OFF;
+
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en cursos: ' + ERROR_MESSAGE();
+END CATCH;
+GO
+
+/*
+Bloque 5: Dia_Cursado, Modulo, Modulo_x_Curso
+-- IMPORTANTE: Insertamos dia_cursado sólo cuando exista el curso (evita FK fail)
+*/
+BEGIN TRY
+    BEGIN TRAN;
+
+    -- Dia_Cursado: ahora solo para cursos que existan
+    INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
+    SELECT DISTINCT ds.id, c.codigoCurso
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Dia_Semana ds ON ds.dia = m.Curso_Dia
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    WHERE m.Curso_Dia IS NOT NULL
+      AND m.Curso_Codigo IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Dia_Cursado dc WHERE dc.diaSemanaId = ds.id AND dc.codigoCurso = c.codigoCurso
+      );
+
+    -- Modulos
+    INSERT INTO DROP_DATABASE.Modulo (nombre, descripcion) 
+    SELECT DISTINCT Modulo_Nombre, Modulo_Descripcion 
+    FROM gd_esquema.Maestra
+    WHERE Modulo_Nombre IS NOT NULL
+      AND Modulo_Descripcion IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo m WHERE m.nombre = Modulo_Nombre AND m.descripcion = Modulo_Descripcion);
+
+    -- Modulo_x_Curso: solo cuando curso y modulo existan
+    INSERT INTO DROP_DATABASE.Modulo_x_Curso(cursoId, moduloId) 
+    SELECT DISTINCT c.codigoCurso, m.id 
+    FROM gd_esquema.Maestra maestra
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = maestra.Curso_Codigo
+    JOIN DROP_DATABASE.Modulo m ON maestra.Modulo_Nombre = m.nombre AND maestra.Modulo_Descripcion = m.descripcion
+    WHERE maestra.Curso_Codigo IS NOT NULL
+      AND maestra.Modulo_Nombre IS NOT NULL
+      AND maestra.Modulo_Descripcion IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Modulo_x_Curso mc WHERE mc.cursoId = c.codigoCurso AND mc.moduloId = m.id
+      );
+
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en dias/modulos: ' + ERROR_MESSAGE();
+END CATCH;
+GO
+
+/*
+Bloque 6: Alumnos y dependientes
+*/
+BEGIN TRY
+    BEGIN TRAN;
+
+    ;WITH Src AS (
+        SELECT 
+            m.*,
+            -- indicador de dni numérico válido (más estricto)
+            CASE WHEN TRY_CAST(m.Alumno_Dni AS BIGINT) IS NOT NULL THEN 1 ELSE 0 END AS has_dni,
+            -- indicador de mail válido
+            CASE WHEN m.Alumno_Mail IS NOT NULL AND CHARINDEX('@', m.Alumno_Mail) > 0 THEN 1 ELSE 0 END AS has_mail,
+            -- indicador de fecha válida
+            CASE WHEN TRY_CONVERT(datetime2(6), m.Alumno_FechaNacimiento) IS NOT NULL THEN 1 ELSE 0 END AS has_fecha,
+            -- indicador de info académica (curso u otro campo que considere "valioso")
+            CASE WHEN m.Curso_Codigo IS NOT NULL THEN 1 ELSE 0 END AS has_curso,
+            -- conteo aproximado de columnas no nulas (mayor = más completa)
+            (
+                CASE WHEN m.Alumno_Nombre IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Apellido IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Dni IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Localidad IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Direccion IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_FechaNacimiento IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Mail IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Alumno_Telefono IS NOT NULL THEN 1 ELSE 0 END
+                + CASE WHEN m.Curso_Codigo IS NOT NULL THEN 1 ELSE 0 END
+            ) AS completeness_score
+        FROM gd_esquema.Maestra m
+        WHERE m.Alumno_Legajo IS NOT NULL
+    ),
+    Ranked AS (
+        SELECT
+            s.*,
+            ROW_NUMBER() OVER (
+                PARTITION BY s.Alumno_Legajo
+                ORDER BY
+                    s.has_dni DESC,       -- PRIORIDAD: dni válido primero
+                    s.has_mail DESC,      -- luego mail
+                    s.has_fecha DESC,     -- luego fechaNacimiento
+                    s.has_curso DESC,     -- luego que tenga curso
+                    s.completeness_score DESC, -- luego la fila más completa
+                    TRY_CONVERT(datetime2(6), s.Alumno_FechaNacimiento) DESC -- breakup tie: fecha más reciente
+            ) AS rn
+        FROM Src s
+    )
+    INSERT INTO DROP_DATABASE.Alumno (
+        legajoAlumno, nombre, apellido, dni, localidad_id, domicilio, fechaNacimiento, direccion, mail, telefono
+    )
+    SELECT
+        r.Alumno_Legajo,
+        r.Alumno_Nombre,
+        r.Alumno_Apellido,
+        CASE WHEN TRY_CAST(r.Alumno_Dni AS BIGINT) IS NOT NULL THEN TRY_CAST(r.Alumno_Dni AS INT) ELSE NULL END,
+        (SELECT TOP 1 id FROM DROP_DATABASE.Localidad 
+            WHERE LTRIM(RTRIM(nombre)) COLLATE Latin1_General_CI_AI = LTRIM(RTRIM(r.Alumno_Localidad)) COLLATE Latin1_General_CI_AI),
+        r.Alumno_Direccion,
+        TRY_CONVERT(datetime2(6), r.Alumno_FechaNacimiento),
+        r.Alumno_Direccion,
+        r.Alumno_Mail,
+        r.Alumno_Telefono
+    FROM Ranked r
+    WHERE r.rn = 1
+      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Alumno a WHERE a.legajoAlumno = r.Alumno_Legajo);
+
+    COMMIT TRAN;
+
+    PRINT 'Insert OK';
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en insert seguro: ' + ERROR_MESSAGE();
+END CATCH;
+GO
+
+
+
+/*
+Bloque 7: TP_Alumno, Inscripcion_Curso, Final, Final_rendido, Inscripcion_Final
+-- En todos los inserts que referencian Curso o Alumno hacemos JOINs con la tabla destino para asegurar que existan y así evitar FK fails.
+*/
+BEGIN TRY
+    BEGIN TRAN;
+
+    -- TP_Alumno: solo cuando exista alumno y curso
+    INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
+    SELECT DISTINCT
         a.legajoAlumno,
         m.Trabajo_Practico_Nota,
-        m.Trabajo_Practico_FechaEvaluacion,
+        TRY_CONVERT(datetime2(6), m.Trabajo_Practico_FechaEvaluacion),
         c.codigoCurso
     FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-WHERE m.Trabajo_Practico_FechaEvaluacion IS NOT NULL;
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    WHERE m.Trabajo_Practico_FechaEvaluacion IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.TP_Alumno tpa 
+          WHERE tpa.legajoAlumno = a.legajoAlumno AND tpa.fechaEvaluacion = TRY_CONVERT(datetime2(6), m.Trabajo_Practico_FechaEvaluacion) AND tpa.curso = c.codigoCurso
+      );
 
-------------------------------------------------------------
--- Cargar las Inscripcion_Curso
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado, fechaRespuesta)
-SELECT DISTINCT
-        m.Inscripcion_Fecha,
+    -- Inscripcion_Curso: solo cuando exista alumno y curso
+    SET IDENTITY_INSERT DROP_DATABASE.Inscripcion_Curso ON;
+    INSERT INTO DROP_DATABASE.Inscripcion_Curso (Inscripcion_Numero,fechaInscripcion, legajoAlumno, codigoCurso, estado, fechaRespuesta)
+    SELECT DISTINCT
+        m.Inscripcion_Numero,
+        TRY_CONVERT(datetime2(6), m.Inscripcion_Fecha),
         a.legajoAlumno,
         c.codigoCurso,
         m.Inscripcion_Estado,
-        m.Inscripcion_FechaRespuesta
+        TRY_CONVERT(datetime2(6), m.Inscripcion_FechaRespuesta)
     FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-WHERE m.Inscripcion_Estado IS NOT NULL;
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    WHERE m.Inscripcion_Estado IS NOT NULL 
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Inscripcion_Curso ic 
+          WHERE ic.legajoAlumno = a.legajoAlumno AND ic.codigoCurso = c.codigoCurso AND ic.fechaInscripcion = TRY_CONVERT(datetime2(6), m.Inscripcion_Fecha)
+      )
+      order by m.Inscripcion_Numero;
+    SET IDENTITY_INSERT DROP_DATABASE.Inscripcion_Curso OFF;
+    -- Final: generamos IDs pero guardamos mapeo fiable; nos aseguramos de no duplicar
+    INSERT INTO DROP_DATABASE.Final ( fecha, hora, curso, descripcion)
+    SELECT *
+    FROM (
+        SELECT DISTINCT
+            
+            TRY_CONVERT(datetime2(6), m.Examen_Final_Fecha) AS fecha,
+            m.Examen_Final_Hora AS hora,
+            c.codigoCurso AS curso,
+            m.Examen_Final_Descripcion AS descripcion
+        FROM gd_esquema.Maestra m
+        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+        WHERE m.Examen_Final_Fecha IS NOT NULL
+    ) x
+    WHERE NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Final f WHERE f.fecha = x.fecha AND f.hora = x.hora AND f.curso = x.curso);
 
-------------------------------------------------------------
--- Cargar los Final
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Final (Inscripcion_Final_Nro, fecha, hora, curso, descripcion)
-SELECT DISTINCT
-        ROW_NUMBER() OVER (ORDER BY m.Examen_Final_Fecha, m.Examen_Final_Hora, c.codigoCurso),  -- Generar ID
-        m.Examen_Final_Fecha,
-        m.Examen_Final_Hora,
-        c.codigoCurso,
-        m.Examen_Final_Descripcion
-    FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-    WHERE m.Examen_Final_Fecha IS NOT NULL;
-
-------------------------------------------------------------
--- Cargar los Final_rendido 
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Final_rendido (legajoAlumno, finalId, presente, nota, profesor)
-SELECT DISTINCT
+    -- Final_rendido: sólo si existen alumno y final (match por fecha+hora+curso)
+    SET IDENTITY_INSERT DROP_DATABASE.Final_rendido ON
+    INSERT INTO DROP_DATABASE.Final_rendido (legajoAlumno, finalId, presente, nota, profesor)
+    SELECT DISTINCT
         a.legajoAlumno,
-        f.Inscripcion_Final_Nro,
+        f.Final_Nro,
         m.Evaluacion_Final_Presente,
         m.Evaluacion_Final_Nota,
         p.id AS profesor
     FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Final f ON f.fecha = m.Examen_Final_Fecha and f.hora = m.Examen_Final_Hora and m.Curso_Codigo = f.curso
-        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
-        
-------------------------------------------------------------
--- Cargar las Inscripcion_Final
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
-SELECT DISTINCT
-        m.Inscripcion_Final_Nro, --Cambie el final, decia ID, por Nro porque asi aparece en la maestra
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+    JOIN DROP_DATABASE.Final f ON f.fecha = TRY_CONVERT(datetime2(6), m.Examen_Final_Fecha) 
+                               AND ISNULL(f.hora, '') = ISNULL(m.Examen_Final_Hora, '')
+                               AND f.curso = m.Curso_Codigo
+    LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
+    WHERE m.Examen_Final_Fecha IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Final_rendido fr WHERE fr.legajoAlumno = a.legajoAlumno AND fr.finalId = f.Final_Nro
+      );
+      SET IDENTITY_INSERT DROP_DATABASE.Final_rendido OFF
+
+    -- Inscripcion_Final: sólo si existe alumno y final
+    SET IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final ON
+    INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
+    SELECT DISTINCT
+        m.Inscripcion_Final_Nro,
         a.legajoAlumno,
-        m.Inscripcion_Final_Fecha, -- quite "Inscripcion" del final porque no aparece en la maestra
-        f.Inscripcion_Final_Nro,
-        m.Evaluacion_Final_Presente, -- Cambie Incripcion por evaluacion, creo que es eso
+        TRY_CONVERT(datetime2(6), m.Inscripcion_Final_Fecha),
+        f.Final_Nro,
+        m.Evaluacion_Final_Presente,
         p.id AS profesor
     FROM gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
-        INNER JOIN DROP_DATABASE.Final f ON f.Inscripcion_Final_Nro = m.Inscripcion_Final_Nro --Revisar
-        LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
-WHERE m.Inscripcion_Final_Nro IS NOT NULL;
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+    JOIN DROP_DATABASE.Final f ON f.Final_Nro = m.Inscripcion_Final_Nro
+    LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
+    WHERE m.Inscripcion_Final_Nro IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Inscripcion_Final inf WHERE inf.InscripcionFinalId = m.Inscripcion_Final_Nro
+      );
+      SET IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final Off
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en bloque finales/inscripciones: ' + ERROR_MESSAGE();
+END CATCH;
+GO
 
-------------------------------------------------------------
--- Cargar las encuestas
-------------------------------------------------------------
-Insert Into DROP_DATABASE.Encuesta (cursoId)
-select distinct maestra.Curso_Codigo from gd_esquema.Maestra maestra 
-where (maestra.Encuesta_Pregunta1 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta1)) <> '')
-   OR (maestra.Encuesta_Pregunta2 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta2)) <> '')
-   OR (maestra.Encuesta_Pregunta3 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta3)) <> '')
-   OR (maestra.Encuesta_Pregunta4 IS NOT NULL AND LTRIM(RTRIM(maestra.Encuesta_Pregunta4)) <> '');
+/*
+Bloque 8: Encuestas y detalles (aseguramos existencia de Curso y Encuesta antes de insertar Preguntas/Respondidas/Detalle)
+*/
+BEGIN TRY
+    BEGIN TRAN;
 
-DECLARE @n INT = 1;
+    -- Encuesta: solo cuando el curso exista
+    INSERT INTO DROP_DATABASE.Encuesta (cursoId)
+    SELECT DISTINCT c.codigoCurso
+    FROM gd_esquema.Maestra ma
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = ma.Curso_Codigo
+    WHERE (ma.Encuesta_Pregunta1 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta1)) <> '')
+       OR (ma.Encuesta_Pregunta2 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta2)) <> '')
+       OR (ma.Encuesta_Pregunta3 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta3)) <> '')
+       OR (ma.Encuesta_Pregunta4 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta4)) <> '')
+    --AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Encuesta e WHERE e.cursoId = c.codigoCurso);
 
-WHILE @n <= 4
-BEGIN
-    INSERT INTO DROP_DATABASE.Pregunta (pregunta, nroPregunta, encuestaId)
-    SELECT DISTINCT
-        CASE @n
-            WHEN 1 THEN m.Encuesta_Pregunta1
-            WHEN 2 THEN m.Encuesta_Pregunta2
-            WHEN 3 THEN m.Encuesta_Pregunta3
-            WHEN 4 THEN m.Encuesta_Pregunta4
-        END AS pregunta,
-        @n AS nroPregunta,
+    DECLARE @n INT = 1;
+    WHILE @n <= 4
+    BEGIN
+        INSERT INTO DROP_DATABASE.Pregunta (pregunta, nroPregunta, encuestaId)
+        SELECT DISTINCT
+            CASE @n
+                WHEN 1 THEN m.Encuesta_Pregunta1
+                WHEN 2 THEN m.Encuesta_Pregunta2
+                WHEN 3 THEN m.Encuesta_Pregunta3
+                WHEN 4 THEN m.Encuesta_Pregunta4
+            END AS pregunta,
+            @n AS nroPregunta,
+            e.encuestaId
+        FROM gd_esquema.Maestra m
+        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+        JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
+        WHERE
+            (CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END) IS NOT NULL
+            AND LTRIM(RTRIM((CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END))) <> ''
+            AND NOT EXISTS (
+                SELECT 1 FROM DROP_DATABASE.Pregunta p 
+                WHERE p.encuestaId = e.encuestaId AND p.nroPregunta = @n
+            );
+
+        SET @n = @n + 1;
+    END
+
+    -- Encuesta_Respondida
+    INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
+    SELECT DISTINCT 
+        TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro), 
+        m.Encuesta_Observacion, 
         e.encuestaId
     FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Encuesta e
-        ON m.Curso_Codigo = e.cursoId
-    WHERE
-        (CASE @n
-            WHEN 1 THEN m.Encuesta_Pregunta1
-            WHEN 2 THEN m.Encuesta_Pregunta2
-            WHEN 3 THEN m.Encuesta_Pregunta3
-            WHEN 4 THEN m.Encuesta_Pregunta4
-        END) IS NOT NULL
-        AND (CASE @n
-            WHEN 1 THEN LTRIM(RTRIM(m.Encuesta_Pregunta1))
-            WHEN 2 THEN LTRIM(RTRIM(m.Encuesta_Pregunta2))
-            WHEN 3 THEN LTRIM(RTRIM(m.Encuesta_Pregunta3))
-            WHEN 4 THEN LTRIM(RTRIM(m.Encuesta_Pregunta4))
-        END) <> '';
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
+    WHERE m.Encuesta_FechaRegistro IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Encuesta_Respondida er WHERE er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro)
+      );
 
-    SET @n = @n + 1;
-END;
+    DECLARE @m INT = 1;
+    WHILE @m <= 4
+    BEGIN
+        INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
+        SELECT DISTINCT
+            p.id as preguntaId,
+            CASE @m
+                WHEN 1 THEN m.Encuesta_Nota1
+                WHEN 2 THEN m.Encuesta_Nota2
+                WHEN 3 THEN m.Encuesta_Nota3
+                WHEN 4 THEN m.Encuesta_Nota4
+            END AS respuestaNota,
+            er.id AS encuestaRespondidaId
+        FROM gd_esquema.Maestra m
+        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+        JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
+        JOIN DROP_DATABASE.Encuesta_Respondida er ON er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro)
+        JOIN DROP_DATABASE.Pregunta p ON p.encuestaId = e.encuestaId AND p.nroPregunta = @m
+        WHERE
+            (CASE @m WHEN 1 THEN m.Encuesta_Nota1 WHEN 2 THEN m.Encuesta_Nota2 WHEN 3 THEN m.Encuesta_Nota3 WHEN 4 THEN m.Encuesta_Nota4 END) IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM DROP_DATABASE.Detalle_Encuesta_Respondida der
+                WHERE der.preguntaId = p.id AND der.encuestaRespondidaId = er.id
+            );
 
-------------------------------------------------------------
--- Cargar las Encuesta_Respondida
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
-SELECT DISTINCT 
-    m.Encuesta_FechaRegistro, 
-    m.Encuesta_Observacion, 
-    e.encuestaId
-FROM gd_esquema.Maestra m
-INNER JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
-WHERE m.Encuesta_FechaRegistro IS NOT NULL;
+        SET @m = @m + 1;
+    END
 
+    COMMIT TRAN;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRAN;
+    PRINT 'Error en bloque encuestas: ' + ERROR_MESSAGE();
+END CATCH;
+GO
 
-DECLARE @m INT = 1;
-WHILE @m <= 4
-BEGIN 
+/*
+Bloque 9: Medio_Pago, Factura, Pago, Periodo, Detalle_Factura, Evaluaciones
+*/
+BEGIN TRY
+    BEGIN TRAN;
 
-------------------------------------------------------------
--- Cargar los Detalle_Encuesta_Respondida
-------------------------------------------------------------
-INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
-SELECT DISTINCT
-    p.id as preguntaId,
-    CASE @m
-        WHEN 1 THEN m.Encuesta_Nota1
-        WHEN 2 THEN m.Encuesta_Nota2
-        WHEN 3 THEN m.Encuesta_Nota3
-        WHEN 4 THEN m.Encuesta_Nota4
-    END AS respuestaNota,
-    er.id AS encuestaRespondidaId
-FROM gd_esquema.Maestra m
-INNER JOIN DROP_DATABASE.Encuesta e ON e.cursoId = m.Curso_Codigo
-    INNER JOIN DROP_DATABASE.Encuesta_Respondida er ON er.encuestaId = e.encuestaId 
-        AND er.fechaRegistro = m.Encuesta_FechaRegistro
-    INNER JOIN DROP_DATABASE.Pregunta p ON p.encuestaId = e.encuestaId 
-        AND p.nroPregunta = @m
-    WHERE
-        CASE @m
-            WHEN 1 THEN m.Encuesta_Nota1
-            WHEN 2 THEN m.Encuesta_Nota2
-            WHEN 3 THEN m.Encuesta_Nota3
-            WHEN 4 THEN m.Encuesta_Nota4
-        END IS NOT NULL;
-SET @m = @m + 1;
-END;
+    -- Medio_Pago
+    INSERT INTO DROP_DATABASE.Medio_Pago (medioPago)
+    SELECT DISTINCT Pago_MedioPago FROM gd_esquema.Maestra
+    WHERE Pago_MedioPago IS NOT NULL
+      --AND Pago_MedioPago NOT IN (SELECT medioPago FROM DROP_DATABASE.Medio_Pago);
 
-
-------------------------------------------------------------
--- Cargar los Medio_Pago
-------------------------------------------------------------
-insert into DROP_DATABASE.Medio_Pago
-select DISTINCT Pago_MedioPago from gd_esquema.Maestra
-
-------------------------------------------------------------
--- Cargar los Factura
-------------------------------------------------------------
-insert into DROP_DATABASE.Factura
-select DISTINCT
-        f.Factura_Numero,
-        f.Factura_FechaEmision,
-        f.Factura_FechaVencimiento,
+    -- Factura (solo si alumno existe)
+    INSERT INTO DROP_DATABASE.Factura (facturaNumero, fechaEmision, fechaVencimiento, importeTotal, legajoAlumno)
+    SELECT DISTINCT
+        TRY_CAST(f.Factura_Numero AS BIGINT),
+        TRY_CONVERT(datetime2(6), f.Factura_FechaEmision),
+        TRY_CONVERT(datetime2(6), f.Factura_FechaVencimiento),
         f.Factura_Total,
         a.legajoAlumno
-    from gd_esquema.Maestra f
-        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = f.Alumno_Legajo;
+    FROM gd_esquema.Maestra f
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = f.Alumno_Legajo
+    WHERE f.Factura_Numero IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Factura fa WHERE fa.facturaNumero = TRY_CAST(f.Factura_Numero AS BIGINT));
 
-------------------------------------------------------------
--- Cargar los Pago
-------------------------------------------------------------
-insert into DROP_DATABASE.Pago
-select DISTINCT
-        m.Pago_Fecha,
+    -- Pago (sólo si existe factura y medio_pago)
+    INSERT INTO DROP_DATABASE.Pago (fecha, importe, medioPagoId, facturaNumero)
+    SELECT DISTINCT
+        TRY_CONVERT(datetime2(6), m.Pago_Fecha),
         m.Pago_Importe,
         mp.id AS medioPagoId, 
         f.facturaNumero
-    from gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
-        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero;
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
+    JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
+    WHERE m.Pago_Fecha IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Pago p WHERE p.facturaNumero = f.facturaNumero AND p.importe = m.Pago_Importe AND p.fecha = TRY_CONVERT(datetime2(6), m.Pago_Fecha)
+      );
 
-        
-------------------------------------------------------------
--- Cargar los Periodo
-------------------------------------------------------------
-insert into DROP_DATABASE.Periodo
-select DISTINCT
-        Periodo_Anio, Periodo_Mes
-    from gd_esquema.Maestra;
+    -- Periodo
+    INSERT INTO DROP_DATABASE.Periodo (periodoAnio, periodoMes)
+    SELECT DISTINCT Periodo_Anio, Periodo_Mes
+    FROM gd_esquema.Maestra
+    WHERE Periodo_Anio IS NOT NULL AND Periodo_Mes IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Periodo per WHERE per.periodoAnio = gd_esquema.Maestra.Periodo_Anio AND per.periodoMes = gd_esquema.Maestra.Periodo_Mes
+      );
 
-------------------------------------------------------------
--- Cargar los Detalle_Factura
-------------------------------------------------------------
-insert into DROP_DATABASE.Detalle_Factura
-select DISTINCT
+    -- Detalle_Factura (solo si factura y curso y periodo existen)
+    INSERT INTO DROP_DATABASE.Detalle_Factura (codigoCurso, importe, facturaNumero, periodoId)
+    SELECT DISTINCT
         c.codigoCurso,
         m.Detalle_Factura_Importe,
         f.facturaNumero, 
         p.id
-    from gd_esquema.Maestra m
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-        INNER JOIN DROP_DATABASE.Factura f ON f.facturaNumero = m.Factura_Numero
-        inner join DROP_DATABASE.Periodo p on p.periodoAnio = m.Periodo_Anio and p.periodoMes = m.Periodo_Mes;
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
+    JOIN DROP_DATABASE.Periodo p ON p.periodoAnio = m.Periodo_Anio AND p.periodoMes = m.Periodo_Mes
+    WHERE m.Detalle_Factura_Importe IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Detalle_Factura df WHERE df.facturaNumero = f.facturaNumero AND df.codigoCurso = c.codigoCurso
+      );
 
-------------------------------------------------------------
--- Cargar los Evaluacion
-------------------------------------------------------------
-insert into DROP_DATABASE.Evaluacion
-SELECT DISTINCT Evaluacion_Curso_fechaEvaluacion
+    -- Evaluacion
+    INSERT INTO DROP_DATABASE.Evaluacion (fecha, cursoId)
+    SELECT DISTINCT TRY_CONVERT(datetime2(6), Evaluacion_Curso_fechaEvaluacion), Curso_Codigo
     FROM gd_esquema.Maestra
-WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL;
+    WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+      AND EXISTS (SELECT 1 FROM DROP_DATABASE.Curso c WHERE c.codigoCurso = gd_esquema.Maestra.Curso_Codigo)
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Evaluacion e WHERE e.fecha = TRY_CONVERT(datetime2(6), gd_esquema.Maestra.Evaluacion_Curso_fechaEvaluacion) AND e.cursoId = gd_esquema.Maestra.Curso_Codigo
+      );
 
-------------------------------------------------------------
--- Cargar los Evaluacion_Rendida
-------------------------------------------------------------
-insert into DROP_DATABASE.Evaluacion_Rendida
-select DISTINCT
+    -- Evaluacion_Rendida
+    INSERT INTO DROP_DATABASE.Evaluacion_Rendida (legajoAlumno, nota, presente, instancia, evaluacionId)
+    SELECT DISTINCT
         a.legajoAlumno,
         m.Evaluacion_Curso_Nota,
         m.Evaluacion_Curso_Presente,
         m.Evaluacion_Curso_Instancia,
         e.id
-    from gd_esquema.Maestra m
-        inner join DROP_DATABASE.Alumno a on a.legajoAlumno = m.Alumno_Legajo
-        inner join DROP_DATABASE.Evaluacion e on e.fecha = m.Evaluacion_Curso_fechaEvaluacion;
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = m.Alumno_Legajo
+    JOIN DROP_DATABASE.Evaluacion e ON e.fecha = TRY_CONVERT(datetime2(6), m.Evaluacion_Curso_fechaEvaluacion)
+    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Evaluacion_Rendida er WHERE er.legajoAlumno = a.legajoAlumno AND er.evaluacionId = e.id
+      );
 
-------------------------------------------------------------
--- Cargar los Modulo_de_curso_tomado_en_evaluacion
-------------------------------------------------------------
-insert into DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion
-select DISTINCT
+    -- Modulo_de_curso_tomado_en_evaluacion (asegurando existencia)
+    INSERT INTO DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (evaluacionId, modulo)
+    SELECT DISTINCT
         e.id,
         mxc.id
     FROM gd_esquema.Maestra maestra
-        INNER JOIN DROP_DATABASE.Evaluacion e ON e.Fecha = maestra.Evaluacion_Curso_fechaEvaluacion
-        INNER JOIN DROP_DATABASE.Modulo m ON m.nombre = maestra.Modulo_Nombre
-        INNER JOIN DROP_DATABASE.Curso c ON c.codigoCurso = maestra.Curso_Codigo
-        INNER JOIN DROP_DATABASE.Modulo_X_Curso mxc ON mxc.moduloid = m.id AND mxc.cursoid = c.codigoCurso
-WHERE maestra.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
-    AND maestra.Modulo_Nombre IS NOT NULL
-    AND maestra.Curso_Codigo IS NOT NULL;
+    JOIN DROP_DATABASE.Evaluacion e ON e.Fecha = TRY_CONVERT(datetime2(6), maestra.Evaluacion_Curso_fechaEvaluacion)
+    JOIN DROP_DATABASE.Modulo m ON m.nombre = maestra.Modulo_Nombre
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = maestra.Curso_Codigo
+    JOIN DROP_DATABASE.Modulo_x_Curso mxc ON mxc.moduloId = m.id AND mxc.cursoId = c.codigoCurso
+    WHERE maestra.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+      AND maestra.Modulo_Nombre IS NOT NULL
+      AND maestra.Curso_Codigo IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx WHERE mx.evaluacionId = e.id AND mx.modulo = mxc.id
+      );
 
-    COMMIT TRANSACTION;
+    COMMIT TRAN;
 END TRY
 BEGIN CATCH
-    ROLLBACK TRANSACTION;
-    PRINT 'Error en migración: ' + ERROR_MESSAGE();
+    ROLLBACK TRAN;
+    PRINT 'Error en bloque pagos/evaluaciones: ' + ERROR_MESSAGE();
 END CATCH;
 GO
+
+
+--
+--CREATE TRIGGER DROP_DATABASE.trg_validarCursoActivoInscripcion
+--ON DROP_DATABASE.Inscripcion_Curso
+--INSTEAD OF INSERT
+--AS
+--BEGIN
+--    IF EXISTS (
+--        SELECT 1
+--        FROM inserted i
+--        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = i.codigoCurso
+--        WHERE c.fechaFin < GETDATE()
+--    )
+--    BEGIN
+--        RAISERROR('No se puede inscribir a un curso que ya finalizó.', 16, 1);
+--        ROLLBACK TRANSACTION;
+--        RETURN;
+--    END
+--    IF EXISTS (
+--        SELECT 1
+--        FROM DROP_DATABASE.Inscripcion_Curso ic
+--        JOIN inserted i ON ic.legajoAlumno = i.legajoAlumno AND ic.codigoCurso = i.codigoCurso
+--    )
+--    BEGIN
+--        RAISERROR('El alumno ya está inscripto en este curso.', 16, 1);
+--        ROLLBACK TRANSACTION;
+--        RETURN;
+--    END
+--
+--    INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
+--    SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
+--END;
+--GO
