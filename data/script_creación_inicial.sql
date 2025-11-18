@@ -301,30 +301,7 @@ GO
 
 
 
--- Validar que el alumno esté inscripto antes de rendir evaluación
-CREATE TRIGGER DROP_DATABASE.trg_validarInscripcionEvaluacion
-ON DROP_DATABASE.Evaluacion_Rendida
-FOR INSERT
-AS
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM DROP_DATABASE.Inscripcion_Curso ic
-            JOIN DROP_DATABASE.Evaluacion e ON e.cursoId = ic.codigoCurso
-            WHERE ic.legajoAlumno = i.legajoAlumno
-            AND e.id = i.evaluacionId
-            AND ic.estado = 'aprobada'  -- o el estado que indique inscripción activa
-        )
-    )
-    BEGIN
-        RAISERROR('El alumno debe estar inscripto en el curso para rendir evaluación.', 16, 1);
-        ROLLBACK TRANSACTION;
-    END
-END;
-GO
+
 
 -- Validar consistencia en fechas de facturación
 CREATE TRIGGER DROP_DATABASE.trg_validarFechasFactura
@@ -764,7 +741,7 @@ BEGIN TRY
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Alumno a WHERE a.legajoAlumno = r.legajo_num);
 
     COMMIT TRAN;
-    PRINT 'Insert Alumnos OK';
+
 END TRY
 BEGIN CATCH
     ROLLBACK TRAN;
@@ -832,18 +809,19 @@ BEGIN TRY
     WHERE m.Examen_Final_Fecha IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Final_rendido fr WHERE fr.legajoAlumno = a.legajoAlumno AND fr.finalId = f.Final_Nro);
 
+
     -- Inscripcion_Final: solo si existe alumno y final (no forzamos identity)
-    INSERT INTO DROP_DATABASE.Inscripcion_Final (legajoAlumno, fechaInscripcion, finalId, presente, profesor)
-    SELECT DISTINCT a.legajoAlumno, TRY_CONVERT(datetime2(6), m.Inscripcion_Final_Fecha), f.Final_Nro, m.Evaluacion_Final_Presente, p.id AS profesor
+    set IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final on;
+    INSERT INTO DROP_DATABASE.Inscripcion_Final (InscripcionFinalId, legajoAlumno, fechaInscripcion, finalId, presente, profesor)
+    SELECT DISTINCT m.Inscripcion_Final_Nro,m.Alumno_Legajo, m.Inscripcion_Final_Fecha, f.Final_Nro , m.Evaluacion_Final_Presente, p.id AS profesor
     FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = TRY_CAST(LTRIM(RTRIM(m.Alumno_Legajo)) AS BIGINT)
-    JOIN DROP_DATABASE.Final f ON f.Final_Nro = m.Inscripcion_Final_Nro
-    LEFT JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
+    JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
+    join DROP_DATABASE.Final f ON f.fecha=m.Examen_Final_Fecha and f.hora=m.Examen_Final_Hora and (m.Curso_Codigo is null or f.curso=m.Curso_Codigo)
     WHERE m.Inscripcion_Final_Nro IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Inscripcion_Final inf WHERE inf.legajoAlumno = a.legajoAlumno AND inf.finalId = f.Final_Nro);
+    set IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final on;
 
     COMMIT TRAN;
-    PRINT 'Bloque finales/inscripciones OK';
+
 END TRY
 BEGIN CATCH
     ROLLBACK TRAN;
@@ -962,16 +940,16 @@ BEGIN TRY
       AND EXISTS (SELECT 1 FROM DROP_DATABASE.Curso c WHERE c.codigoCurso = gd_esquema.Maestra.Curso_Codigo)
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Evaluacion e WHERE e.fecha = TRY_CONVERT(datetime2(6), gd_esquema.Maestra.Evaluacion_Curso_fechaEvaluacion) AND e.cursoId = gd_esquema.Maestra.Curso_Codigo);
 
-    -- Evaluacion_Rendida: solo si el alumno tiene inscripcion aprobada en el curso de la evaluacion
-    INSERT INTO DROP_DATABASE.Evaluacion_Rendida (legajoAlumno, nota, presente, instancia, evaluacionId)
-    SELECT DISTINCT a.legajoAlumno, m.Evaluacion_Curso_Nota, m.Evaluacion_Curso_Presente, m.Evaluacion_Curso_Instancia, e.id
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = TRY_CAST(LTRIM(RTRIM(m.Alumno_Legajo)) AS BIGINT)
-    JOIN DROP_DATABASE.Evaluacion e ON e.fecha = TRY_CONVERT(datetime2(6), m.Evaluacion_Curso_fechaEvaluacion)
-    JOIN DROP_DATABASE.Inscripcion_Curso ic ON ic.legajoAlumno = a.legajoAlumno AND ic.codigoCurso = e.cursoId AND ISNULL(ic.estado,'') = 'aprobada'
-    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Evaluacion_Rendida er WHERE er.legajoAlumno = a.legajoAlumno AND er.evaluacionId = e.id);
 
+
+      INSERT INTO DROP_DATABASE.Evaluacion_Rendida (legajoAlumno, nota, presente, instancia, evaluacionId)
+    SELECT DISTINCT m.Alumno_Legajo, m.Evaluacion_Curso_Nota, m.Evaluacion_Curso_Presente, m.Evaluacion_Curso_Instancia, e.id
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Evaluacion e ON e.fecha = m.Evaluacion_Curso_fechaEvaluacion
+    JOIN DROP_DATABASE.Inscripcion_Curso ic ON ic.legajoAlumno = m.Alumno_Legajo AND ic.codigoCurso = e.cursoId 
+    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    
+    
     INSERT INTO DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (evaluacionId, modulo)
     SELECT DISTINCT e.id, mxc.id
     FROM gd_esquema.Maestra ma
@@ -983,7 +961,7 @@ BEGIN TRY
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx WHERE mx.evaluacionId = e.id AND mx.modulo = mxc.id);
 
     COMMIT TRAN;
-    PRINT 'Bloque pagos/evaluaciones OK';
+
 END TRY
 BEGIN CATCH
     ROLLBACK TRAN;
@@ -991,7 +969,6 @@ BEGIN CATCH
 END CATCH;
 GO
 
-PRINT 'MIGRACIÓN COMPLETA (version corregida)';
 GO
 
 
@@ -1025,5 +1002,29 @@ BEGIN
 
     INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
     SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
+END;
+GO
+-- Validar que el alumno esté inscripto antes de rendir evaluación
+CREATE TRIGGER DROP_DATABASE.trg_validarInscripcionEvaluacion
+ON DROP_DATABASE.Evaluacion_Rendida
+FOR INSERT
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM DROP_DATABASE.Inscripcion_Curso ic
+            JOIN DROP_DATABASE.Evaluacion e ON e.cursoId = ic.codigoCurso
+            WHERE ic.legajoAlumno = i.legajoAlumno
+            AND e.id = i.evaluacionId
+            AND ic.estado = 'aprobada'  -- o el estado que indique inscripción activa
+        )
+    )
+    BEGIN
+        RAISERROR('El alumno debe estar inscripto en el curso para rendir evaluación.', 16, 1);
+        ROLLBACK TRANSACTION;
+    END
 END;
 GO
