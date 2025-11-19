@@ -579,28 +579,61 @@ GO
 BEGIN TRY
     BEGIN TRAN;
 
-    INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
-    SELECT DISTINCT m.Sede_Nombre, m.Sede_Telefono, m.Sede_Direccion, m.Sede_Mail, l.id, i.id
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Sede_Provincia
-    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Sede_Localidad AND l.provinciaId = p.id
-    JOIN DROP_DATABASE.Institucion i ON i.nombre = m.Institucion_Nombre
-    WHERE m.Sede_Nombre IS NOT NULL
-      AND m.Sede_Direccion IS NOT NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM DROP_DATABASE.Sede s2 WHERE s2.nombre = m.Sede_Nombre AND s2.direccion = m.Sede_Direccion
-      );
 
-    INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
-    SELECT DISTINCT l.id, m.Profesor_Apellido, m.Profesor_Nombre, m.Profesor_Dni,
-           TRY_CONVERT(datetime2(6), m.Profesor_FechaNacimiento), m.Profesor_Direccion, m.Profesor_Telefono, m.Profesor_Mail
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Provincia p ON p.nombre = m.Profesor_Provincia
-    JOIN DROP_DATABASE.Localidad l ON l.nombre = m.Profesor_Localidad AND l.provinciaId = p.id
-    WHERE m.Profesor_Apellido IS NOT NULL
-      AND m.Profesor_Nombre IS NOT NULL
-      AND m.Profesor_Dni IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Profesor pr WHERE pr.dni = m.Profesor_Dni);
+INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
+SELECT DISTINCT 
+    m.Sede_Nombre, 
+    m.Sede_Telefono, 
+    m.Sede_Direccion, 
+    m.Sede_Mail, 
+    l.id, 
+    i.id
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Provincia p
+    ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre,';','')))) COLLATE Latin1_General_CI_AI
+     = UPPER(LTRIM(RTRIM(REPLACE(m.Sede_Provincia,';','')))) COLLATE Latin1_General_CI_AI
+JOIN DROP_DATABASE.Localidad l
+    ON UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI
+     = UPPER(LTRIM(RTRIM(REPLACE(m.Sede_Localidad,';','')))) COLLATE Latin1_General_CI_AI
+    AND l.provinciaId = p.id
+JOIN DROP_DATABASE.Institucion i 
+    ON i.nombre = m.Institucion_Nombre
+WHERE m.Sede_Nombre IS NOT NULL
+  AND m.Sede_Direccion IS NOT NULL
+  AND NOT EXISTS (
+        SELECT 1 
+        FROM DROP_DATABASE.Sede s2 
+        WHERE s2.nombre = m.Sede_Nombre 
+          AND s2.direccion = m.Sede_Direccion
+  );
+  INSERT INTO DROP_DATABASE.Profesor (localidadId, apellido, nombre, dni, fechaNacimiento, direccion, telefono, mail)
+SELECT DISTINCT 
+    l.id, 
+    m.Profesor_Apellido, 
+    m.Profesor_Nombre, 
+    m.Profesor_Dni,
+    TRY_CONVERT(datetime2(6), m.Profesor_FechaNacimiento), 
+    m.Profesor_Direccion, 
+    m.Profesor_Telefono, 
+    m.Profesor_Mail
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Provincia p
+    ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre,';','')))) COLLATE Latin1_General_CI_AI
+     = UPPER(LTRIM(RTRIM(REPLACE(m.Profesor_Provincia,';','')))) COLLATE Latin1_General_CI_AI
+JOIN DROP_DATABASE.Localidad l
+    ON UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI
+     = UPPER(LTRIM(RTRIM(REPLACE(m.Profesor_Localidad,';','')))) COLLATE Latin1_General_CI_AI
+    AND l.provinciaId = p.id
+WHERE m.Profesor_Apellido IS NOT NULL
+  AND m.Profesor_Nombre IS NOT NULL
+  AND m.Profesor_Dni IS NOT NULL
+  AND NOT EXISTS (
+        SELECT 1 
+        FROM DROP_DATABASE.Profesor pr 
+        WHERE pr.dni = m.Profesor_Dni
+  );
+
+
 
     COMMIT TRAN;
 END TRY
@@ -730,7 +763,10 @@ BEGIN TRY
         r.Alumno_Nombre,
         r.Alumno_Apellido,
         CASE WHEN TRY_CAST(r.Alumno_Dni AS BIGINT) IS NOT NULL THEN TRY_CAST(r.Alumno_Dni AS INT) ELSE NULL END,
-        (SELECT TOP 1 id FROM DROP_DATABASE.Localidad WHERE LTRIM(RTRIM(nombre)) COLLATE Latin1_General_CI_AI = LTRIM(RTRIM(r.Alumno_Localidad)) COLLATE Latin1_General_CI_AI),
+        (SELECT TOP 1 l.id 
+        FROM DROP_DATABASE.Localidad l 
+        JOIN DROP_DATABASE.Provincia p ON p.id = l.provinciaId 
+        WHERE UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI = UPPER(LTRIM(RTRIM(REPLACE(r.Alumno_Localidad,';','')))) COLLATE Latin1_General_CI_AI),
         r.Alumno_Direccion,
         TRY_CONVERT(datetime2(6), r.Alumno_FechaNacimiento),
         r.Alumno_Direccion,
