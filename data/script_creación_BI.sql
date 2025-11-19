@@ -9,12 +9,13 @@ SELECT
     cat.id as categoriaId,
     cu.turnoId as turnoId,
     COUNT(*) AS cant_inscripciones,
-    SUM(CASE WHEN i.estado = 'Aprobada' THEN 1 ELSE 0 END) AS cant_aprobadas,
+    SUM(CASE WHEN i.estado = 'Confirmada' THEN 1 ELSE 0 END) AS cant_confirmadas,
     SUM(CASE WHEN i.estado = 'Rechazada' THEN 1 ELSE 0 END) AS cant_rechazadas
 FROM DROP_DATABASE.Inscripcion_Curso i
     JOIN DROP_DATABASE.Curso cu ON cu.codigoCurso = i.codigoCurso
     JOIN DROP_DATABASE.Sede s ON s.id = cu.sedeId
     JOIN DROP_DATABASE.Categoria cat ON cat.id = cu.categoriaId
+WHERE i.fechaInscripcion IS NOT NULL
 GROUP BY
     YEAR(i.fechaInscripcion),
     MONTH(i.fechaInscripcion),
@@ -29,10 +30,15 @@ with alumnos_curso as (
     SELECT
         cu.codigoCurso,
         er.legajoAlumno,
-        MIN(er.nota) AS notaMinima,
-        tp.nota AS notaTP,
-        CASE WHEN MIN(er.nota) >= 4 and tp.nota >= 4 THEN 1 ELSE 0 END AS aprobado,
-        CASE WHEN MIN(er.nota) is NULL or MIN(er.nota) < 4 or tp.nota < 4 THEN 1 ELSE 0 END AS desaprobado
+        COALESCE(MIN(er.nota), 0)AS notaMinima,
+        COALESCE(tp.nota, 0) AS notaTP,
+        CASE WHEN COALESCE(MIN(er.nota),0) >= 4 
+              AND COALESCE(tp.nota,0) >= 4
+             THEN 1 ELSE 0 END AS aprobado,
+
+        CASE WHEN COALESCE(MIN(er.nota),0) < 4
+               OR COALESCE(tp.nota,0) < 4
+             THEN 1 ELSE 0 END AS desaprobado
     FROM DROP_DATABASE.Curso cu 
     JOIN DROP_DATABASE.Modulo_x_Curso mxc 
         ON cu.codigoCurso = mxc.cursoId
@@ -92,7 +98,7 @@ SELECT
 
     SUM(CASE WHEN fr.presente = 1 THEN 1 ELSE 0 END) AS cant_presentes,
     SUM(CASE WHEN fr.presente = 0 or fr.presente IS NULL THEN 1 ELSE 0 END) AS cant_ausentes,
-    AVG(fr.nota) AS notaPromedio
+    AVG(COALESCE(fr.nota, 0)) AS notaPromedio
 
 FROM DROP_DATABASE.Final f
 JOIN DROP_DATABASE.Final_rendido fr 
@@ -129,24 +135,28 @@ SELECT
     YEAR(p.fecha) AS anio,
     MONTH(p.fecha) AS mes,
     p.medioPagoId,          
-    SUM(p.importe) AS montoPagado,
+    SUM(COALESCE(p.importe, 0)) AS montoPagado,
+
     SUM(
         CASE 
-            WHEN p.fecha > f.fechaVencimiento THEN p.importe 
+            WHEN p.fecha > f.fechaVencimiento THEN COALESCE(p.importe,0)
             ELSE 0 
         END
     ) AS montoFueraTermino
+
+
 
 FROM DROP_DATABASE.Pago p
 JOIN DROP_DATABASE.Factura f 
     ON p.facturaNumero = f.facturaNumero
 JOIN DROP_DATABASE.Medio_Pago mp 
     ON p.medioPagoId = mp.id
-
+WHERE (p.fecha IS NOT NULL)
 GROUP BY
     YEAR(p.fecha),
     MONTH(p.fecha),
     p.medioPagoId;
+
 GO
 
 
@@ -174,7 +184,7 @@ JOIN DROP_DATABASE.Curso cu
 
 LEFT JOIN DROP_DATABASE.Pago p 
     ON p.facturaNumero = fact.facturaNumero
-
+WHERE fact.fechaEmision IS NOT NULL
 GROUP BY
     YEAR(fact.fechaEmision),
     MONTH(fact.fechaEmision),
@@ -186,7 +196,7 @@ GO
 
 
 CREATE VIEW DROP_DATABASE.vw_encuestas AS
-SELECT DISTINCT
+SELECT
     YEAR(cu.fechaInicio) AS anio,
     MONTH(cu.fechaInicio) AS mes,
     cu.sedeId,
@@ -200,17 +210,17 @@ SELECT DISTINCT
         ELSE '>50'
     END AS rangoProfesor,
 
-    -- Bloque de satisfacción
-    CASE
-        WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 'Satisfecho'
-        WHEN der.respuestaNota = 3 THEN 'Neutral'
-        ELSE 'Insatisfecho'
-    END AS bloqueSatisfaccion,
+    -- Cantidades según el enunciado
+    SUM(CASE WHEN der.respuestaNota BETWEEN 7 AND 10 THEN 1 ELSE 0 END) AS cant_satisfechos,
+    SUM(CASE WHEN der.respuestaNota BETWEEN 5 AND 6 THEN 1 ELSE 0 END) AS cant_neutrales,
+    SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 4 THEN 1 ELSE 0 END) AS cant_insatisfechos,
 
-    -- Métricas BI
-    SUM(CASE WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 1 ELSE 0 END) AS cant_satisfechos,
-    SUM(CASE WHEN der.respuestaNota = 3 THEN 1 ELSE 0 END) AS cant_neutrales,
-    SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 2 THEN 1 ELSE 0 END) AS cant_insatisfechos
+    -- Índice de satisfacción
+    -- ((%satisfechos - %insatisfechos) + 100)/2
+    CASE 
+        WHEN COUNT(*) = 0 THEN NULL
+        ELSE ((((SUM(CASE WHEN der.respuestaNota BETWEEN 7 AND 10 THEN 1 END) * 100.0 / COUNT(*))-(SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 4 THEN 1 END) * 100.0 / COUNT(*))) + 100) / 2)
+    END AS indice_satisfaccion
 
 FROM DROP_DATABASE.Encuesta_Respondida er
 JOIN DROP_DATABASE.Encuesta e
@@ -219,7 +229,8 @@ JOIN DROP_DATABASE.Curso cu
     ON e.cursoId = cu.codigoCurso
 JOIN DROP_DATABASE.Profesor p
     ON cu.profesorId = p.id
-JOIN DROP_DATABASE.Detalle_Encuesta_Respondida der ON der.encuestaRespondidaId=e.encuestaId 
+JOIN DROP_DATABASE.Detalle_Encuesta_Respondida der
+    ON der.encuestaRespondidaId = er.id
 
 GROUP BY
     YEAR(cu.fechaInicio),
@@ -232,15 +243,11 @@ GROUP BY
         WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 25 AND 35 THEN '25-35'
         WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 36 AND 50 THEN '35-50'
         ELSE '>50'
-    END,
-
-    CASE
-        WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 'Satisfecho'
-        WHEN der.respuestaNota = 3 THEN 'Neutral'
-        ELSE 'Insatisfecho'
     END;
 
+
 GO
+
 
 CREATE TABLE DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR (
     idRangoAlumno INT PRIMARY KEY,
@@ -270,10 +277,7 @@ CREATE TABLE DROP_DATABASE.BI_DIM_MEDIO_PAGO (
     nombre VARCHAR(255)
 );
 
-CREATE TABLE DROP_DATABASE.BI_DIM_BLOQUE_SATISFACCION (
-    idBloque INT PRIMARY KEY,
-    descripcion VARCHAR(255)
-);
+
 
 CREATE TABLE DROP_DATABASE.BI_DIM_SEDE (
     idSede INT PRIMARY KEY,
@@ -318,12 +322,12 @@ CREATE TABLE DROP_DATABASE.BI_FACT_ENCUESTAS (
     id_sede INT,
     id_categoria INT,
     id_rango_profesor INT,
-    id_bloque INT,
     cant_satisfechos INT NULL,
     cant_neutrales INT NULL,
     cant_insatisfechos INT NULL,
+    indice_satisfaccion FLOAT NOT NULL,
     CONSTRAINT PK_FACT_ENCUESTAS PRIMARY KEY
-        (id_tiempo, id_sede, id_categoria, id_rango_profesor, id_bloque),
+        (id_tiempo, id_sede, id_categoria, id_rango_profesor),
     CONSTRAINT FK_ENC_TIEMPO FOREIGN KEY (id_tiempo)
         REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
     CONSTRAINT FK_ENC_SEDE FOREIGN KEY (id_sede)
@@ -332,8 +336,7 @@ CREATE TABLE DROP_DATABASE.BI_FACT_ENCUESTAS (
         REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria),
     CONSTRAINT FK_ENC_RANGO_PROF FOREIGN KEY (id_rango_profesor)
         REFERENCES DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR(idRangoAlumno),
-    CONSTRAINT FK_ENC_BLOQUE FOREIGN KEY (id_bloque)
-        REFERENCES DROP_DATABASE.BI_DIM_BLOQUE_SATISFACCION(idBloque)
+
 );
 
 CREATE TABLE DROP_DATABASE.BI_FACT_CURSADA (
@@ -393,3 +396,306 @@ CREATE TABLE DROP_DATABASE.BI_FACT_FINALES (
     CONSTRAINT FK_FIN_RANGO_ALUM FOREIGN KEY (id_rango_alumno)
         REFERENCES DROP_DATABASE.BI_DIM_RANGO_ETARIO_ALUMNO(idRangoAlumno)
 );
+
+GO
+
+INSERT INTO DROP_DATABASE.BI_DIM_TIEMPO (idTiempo, anio, mes, cuatrimestre, semestre)
+SELECT DISTINCT
+    anio * 100 + mes AS idTiempo,
+    anio,
+    mes,
+    CASE 
+        WHEN mes BETWEEN 1 AND 4 THEN 1
+        WHEN mes BETWEEN 5 AND 8 THEN 2
+        ELSE 3
+    END AS cuatrimestre,
+    CASE 
+        WHEN mes BETWEEN 1 AND 6 THEN 1
+        ELSE 2
+    END AS semestre
+FROM (
+    SELECT anio, mes FROM DROP_DATABASE.vw_inscripciones
+    UNION SELECT anio, mes FROM DROP_DATABASE.vw_cursada
+    UNION SELECT anio, mes FROM DROP_DATABASE.vw_finales
+    UNION SELECT anio, mes FROM DROP_DATABASE.vw_pagos
+    UNION SELECT anio, mes FROM DROP_DATABASE.vw_facturacion
+    UNION SELECT anio, mes FROM DROP_DATABASE.vw_encuestas
+) t;
+
+INSERT INTO DROP_DATABASE.BI_DIM_SEDE (idSede, nombre)
+SELECT DISTINCT
+    s.id,
+    s.nombre
+FROM DROP_DATABASE.Sede s;
+
+
+INSERT INTO DROP_DATABASE.BI_DIM_CATEGORIA (idCategoria, categoria)
+SELECT DISTINCT
+    c.id,
+    c.nombre
+FROM DROP_DATABASE.Categoria c;
+
+INSERT INTO DROP_DATABASE.BI_DIM_TURNO (idTurno, turno)
+SELECT DISTINCT
+    t.id,
+    t.nombre
+FROM DROP_DATABASE.Turno t;
+
+INSERT INTO DROP_DATABASE.BI_DIM_MEDIO_PAGO (idMedioPago, nombre)
+SELECT DISTINCT
+    mp.id,
+    mp.medioPago
+FROM DROP_DATABASE.Medio_Pago mp;
+
+--INSERT INTO DROP_DATABASE.BI_DIM_BLOQUE_SATISFACCION (idBloque, descripcion)
+--VALUES
+--(1, 'Satisfecho'),
+--(2, 'Neutral'),
+--(3, 'Insatisfecho');
+
+INSERT INTO DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR (idRangoAlumno, descripcion)
+VALUES
+(1, '<25'),
+(2, '25-35'),
+(3, '35-50'),
+(4, '>50');
+
+INSERT INTO DROP_DATABASE.BI_DIM_RANGO_ETARIO_ALUMNO (idRangoAlumno, descripcion)
+VALUES
+(1, '<25'),
+(2, '25-35'),
+(3, '35-50'),
+(4, '>50');
+
+INSERT INTO DROP_DATABASE.BI_FACT_INSCRIPCIONES
+(id_tiempo, id_sede, id_categoria, id_turno, cant_inscripciones, cant_rechazos, cant_aprobadas)
+SELECT
+    anio * 100 + mes AS id_tiempo,
+    sedeId,
+    categoriaId,
+    turnoId,
+    cant_inscripciones,
+    cant_rechazadas,
+    cant_confirmadas
+FROM DROP_DATABASE.vw_inscripciones; --VER (523 filas afectadas) Warning: Null value is eliminated by an aggregate or other SET operation.
+
+
+INSERT INTO DROP_DATABASE.BI_FACT_CURSADA
+(id_tiempo, id_sede, id_categoria, cant_aprobados, cant_desaprobados)
+SELECT
+    anio * 100 + mes,
+    sedeId,
+    categoriaId,
+    cant_aprobados,
+    cant_desaprobados
+FROM DROP_DATABASE.vw_cursada;
+
+INSERT INTO DROP_DATABASE.BI_FACT_FINALES 
+(id_tiempo, id_sede, id_categoria, id_rango_profesor, id_rango_alumno, 
+ cant_presentes, cant_ausentes, nota_promedio)
+SELECT
+    anio * 100 + mes,
+    sedeId,
+    categoriaId,
+
+    CASE rangoProfesor
+        WHEN '<25' THEN 1
+        WHEN '25-35' THEN 2
+        WHEN '35-50' THEN 3
+        ELSE 4
+    END,
+
+    CASE rangoAlumno
+        WHEN '<25' THEN 1
+        WHEN '25-35' THEN 2
+        WHEN '35-50' THEN 3
+        ELSE 4
+    END,
+
+    cant_presentes,
+    cant_ausentes,
+    notaPromedio
+FROM DROP_DATABASE.vw_finales;
+
+
+INSERT INTO DROP_DATABASE.BI_FACT_PAGOS
+(id_tiempo, id_medio_pago, monto_pagado, monto_fuera_termino)
+SELECT
+    anio * 100 + mes,
+    medioPagoId,
+    montoPagado,
+    montoFueraTermino
+FROM DROP_DATABASE.vw_pagos;
+
+INSERT INTO DROP_DATABASE.BI_FACT_FACTURACION --(964 filas afectadas) Warning: Null value is eliminated by an aggregate or other SET operation.
+(id_tiempo, id_sede, id_categoria, importe_total, importe_adeudado)
+SELECT
+    anio * 100 + mes,
+    sedeId,
+    categoriaId,
+    importeTotal,
+    importeAdeudado
+FROM DROP_DATABASE.vw_facturacion;
+
+INSERT INTO DROP_DATABASE.BI_FACT_ENCUESTAS
+(id_tiempo, id_sede, id_categoria, id_rango_profesor, 
+ cant_satisfechos, cant_neutrales, cant_insatisfechos, indice_satisfaccion)
+SELECT
+    anio * 100 + mes,
+    sedeId,
+    categoriaId,
+
+    CASE rangoProfesor
+        WHEN '<25'   THEN 1
+        WHEN '25-35' THEN 2
+        WHEN '35-50' THEN 3
+        ELSE 4
+    END,
+
+    cant_satisfechos,
+    cant_neutrales,
+    cant_insatisfechos,
+    indice_satisfaccion
+FROM DROP_DATABASE.vw_encuestas;
+
+GO
+CREATE VIEW categorías_y_turnos_más_solicitados AS
+SELECT TOP 3
+    t.anio,
+    s.nombre AS sede,
+    c.categoria,
+    tu.turno,
+    f.cant_inscripciones
+FROM DROP_DATABASE.BI_FACT_INSCRIPCIONES f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+JOIN DROP_DATABASE.BI_DIM_CATEGORIA c ON f.id_categoria = c.idCategoria
+JOIN DROP_DATABASE.BI_DIM_TURNO tu ON f.id_turno = tu.idTurno
+ORDER BY f.cant_inscripciones DESC;
+
+GO
+CREATE VIEW tasa_rechazo_inscripciones AS
+SELECT
+    t.anio,
+    t.mes,
+    s.nombre AS sede,
+    SUM(f.cant_rechazos) * 1.0 / SUM(f.cant_inscripciones) AS tasa_rechazo
+FROM DROP_DATABASE.BI_FACT_INSCRIPCIONES f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+GROUP BY t.anio, t.mes, s.nombre;
+
+GO
+
+CREATE VIEW comparación_desempeño_cursada_por_sede AS
+SELECT
+    t.anio,
+    s.nombre AS sede,
+    SUM(f.cant_aprobados) * 1.0 /
+    (SUM(f.cant_aprobados) + SUM(f.cant_desaprobados)) AS porcentaje_aprobacion
+FROM DROP_DATABASE.BI_FACT_CURSADA f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+GROUP BY t.anio, s.nombre;
+
+GO
+
+CREATE VIEW tiempo_promedio_finalización_curso AS
+SELECT
+    YEAR(cu.fechaInicio) AS anio,
+    c.nombre AS categoria,
+    AVG(DATEDIFF(day, cu.fechaInicio, f.fecha)) AS tiempo_promedio_dias
+FROM DROP_DATABASE.Curso cu
+JOIN DROP_DATABASE.Final f ON f.curso = cu.codigoCurso
+JOIN DROP_DATABASE.Final_rendido fr ON fr.finalId = f.Final_Nro
+JOIN DROP_DATABASE.Categoria c ON c.id = cu.categoriaId
+WHERE fr.nota >= 4  -- finales aprobados
+GROUP BY YEAR(cu.fechaInicio), c.nombre;
+
+GO
+
+CREATE VIEW nota_promedio_finales AS
+SELECT
+    t.anio,
+    t.semestre,
+    c.categoria,
+    ra.descripcion AS rango_alumno,
+    AVG(f.nota_promedio) AS nota_promedio_final
+FROM DROP_DATABASE.BI_FACT_FINALES f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_CATEGORIA c ON f.id_categoria = c.idCategoria
+JOIN DROP_DATABASE.BI_DIM_RANGO_ETARIO_ALUMNO ra ON ra.idRangoAlumno = f.id_rango_alumno
+GROUP BY t.anio, t.semestre, c.categoria, ra.descripcion;
+
+GO
+
+CREATE VIEW tasa_ausentismo_finales AS
+SELECT
+    t.anio,
+    t.semestre,
+    s.nombre AS sede,
+    SUM(f.cant_ausentes) * 1.0 /
+    (SUM(f.cant_presentes) + SUM(f.cant_ausentes)) AS tasa_ausentismo
+FROM DROP_DATABASE.BI_FACT_FINALES f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+GROUP BY t.anio, t.semestre, s.nombre;
+
+GO
+
+CREATE VIEW desvio_pagos AS
+SELECT
+    t.anio,
+    t.semestre,
+    mp.nombre AS medio_pago,
+    SUM(f.monto_fuera_termino) * 1.0 /
+    SUM(f.monto_pagado) AS porcentaje_fuera_termino
+FROM DROP_DATABASE.BI_FACT_PAGOS f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_MEDIO_PAGO mp ON f.id_medio_pago = mp.idMedioPago
+GROUP BY t.anio, t.semestre, mp.nombre;
+
+GO
+
+CREATE VIEW tasa_morosidad_financiera_mensual AS
+SELECT
+    t.anio,
+    t.mes,
+    s.nombre AS sede,
+    c.categoria,
+    SUM(f.importe_adeudado) * 1.0 / SUM(f.importe_total) AS tasa_morosidad
+FROM DROP_DATABASE.BI_FACT_FACTURACION f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+JOIN DROP_DATABASE.BI_DIM_CATEGORIA c ON f.id_categoria = c.idCategoria
+GROUP BY t.anio, t.mes, s.nombre, c.categoria;
+
+GO
+
+CREATE VIEW ingresos_por_categoria_cursos AS
+SELECT TOP 3
+    t.anio,
+    s.nombre AS sede,
+    c.categoria,
+    SUM(f.importe_total) AS ingresos
+FROM DROP_DATABASE.BI_FACT_FACTURACION f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+JOIN DROP_DATABASE.BI_DIM_CATEGORIA c ON f.id_categoria = c.idCategoria
+GROUP BY t.anio, s.nombre, c.categoria
+ORDER BY ingresos DESC;
+
+
+GO
+CREATE VIEW indice_satisfación AS
+SELECT
+    t.anio,
+    s.nombre AS sede,
+    rp.descripcion AS rango_profesor,
+    AVG(f.indice_satisfaccion) AS indice_promedio
+FROM DROP_DATABASE.BI_FACT_ENCUESTAS f
+JOIN DROP_DATABASE.BI_DIM_TIEMPO t ON f.id_tiempo = t.idTiempo
+JOIN DROP_DATABASE.BI_DIM_SEDE s ON f.id_sede = s.idSede
+JOIN DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR rp
+    ON f.id_rango_profesor = rp.idRangoAlumno
+GROUP BY t.anio, s.nombre, rp.descripcion;
