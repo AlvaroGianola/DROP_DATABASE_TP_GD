@@ -183,21 +183,59 @@ GROUP BY
 
 GO
 
-CREATE VIEW vw_encuestas AS
-SELECT 
+CREATE VIEW DROP_DATABASE.vw_encuestas AS
+SELECT DISTINCT
+    YEAR(cu.fechaInicio) AS anio,
+    MONTH(cu.fechaInicio) AS mes,
+    cu.sedeId,
+    cu.categoriaId,
+
+    -- Rango etario del profesor
+    CASE 
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) < 25 THEN '<25'
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 25 AND 35 THEN '25-35'
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 36 AND 50 THEN '35-50'
+        ELSE '>50'
+    END AS rangoProfesor,
+
+    -- Bloque de satisfacción
+    CASE
+        WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 'Satisfecho'
+        WHEN der.respuestaNota = 3 THEN 'Neutral'
+        ELSE 'Insatisfecho'
+    END AS bloqueSatisfaccion,
+
+    -- Métricas BI
+    SUM(CASE WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 1 ELSE 0 END) AS cant_satisfechos,
+    SUM(CASE WHEN der.respuestaNota = 3 THEN 1 ELSE 0 END) AS cant_neutrales,
+    SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 2 THEN 1 ELSE 0 END) AS cant_insatisfechos
+
+FROM DROP_DATABASE.Encuesta_Respondida er
+JOIN DROP_DATABASE.Encuesta e
+    ON er.encuestaId = e.encuestaId
+JOIN DROP_DATABASE.Curso cu
+    ON e.cursoId = cu.codigoCurso
+JOIN DROP_DATABASE.Profesor p
+    ON cu.profesorId = p.id
+JOIN DROP_DATABASE.Detalle_Encuesta_Respondida der ON der.encuestaRespondidaId=e.encuestaId 
+
+GROUP BY
+    YEAR(cu.fechaInicio),
+    MONTH(cu.fechaInicio),
+    cu.sedeId,
+    cu.categoriaId,
+
+    CASE 
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) < 25 THEN '<25'
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 25 AND 35 THEN '25-35'
+        WHEN DATEDIFF(year, p.fechaNacimiento, GETDATE()) BETWEEN 36 AND 50 THEN '35-50'
+        ELSE '>50'
+    END,
+
+    CASE
+        WHEN der.respuestaNota BETWEEN 4 AND 5 THEN 'Satisfecho'
+        WHEN der.respuestaNota = 3 THEN 'Neutral'
+        ELSE 'Insatisfecho'
+    END;
 
 
-GO
-vw_encuestas
-
-→ alimenta BI_FACT_ENCUESTAS
-
-Contiene:
-
-cantidad satisfechos
-
-cantidad neutrales
-
-cantidad insatisfechos
-
-por: tiempo, sede, categoría, rango profesor, bloque de satisfacción
