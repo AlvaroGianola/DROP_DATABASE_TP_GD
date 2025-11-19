@@ -99,7 +99,7 @@ CREATE TABLE DROP_DATABASE.Modulo_x_Curso (
     cursoId BIGINT NOT NULL REFERENCES DROP_DATABASE.Curso(codigoCurso),
     moduloId INT NOT NULL REFERENCES DROP_DATABASE.Modulo(id)
 );
-GO
+
 ------------------------------------------------------------
 -- ALUMNO
 ------------------------------------------------------------
@@ -118,7 +118,7 @@ CREATE TABLE DROP_DATABASE.Alumno (
     CONSTRAINT FK_Alumno_Localidad FOREIGN KEY (localidad_id)
         REFERENCES DROP_DATABASE.Localidad(id)
 );
-GO
+
 
 -- TP_ALUMNO (evaluaciones parciales / trabajos prácticos)
 CREATE TABLE DROP_DATABASE.TP_Alumno (
@@ -132,7 +132,7 @@ CREATE TABLE DROP_DATABASE.TP_Alumno (
     CONSTRAINT FK_TPAlumno_Curso FOREIGN KEY (curso)
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
-GO
+
 
 -- INSCRIPCION A CURSO
 CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
@@ -147,7 +147,7 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
     CONSTRAINT FK_InscripcionCurso_Curso FOREIGN KEY (codigoCurso)
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
-GO
+
 
 -- FINAL
 CREATE TABLE DROP_DATABASE.Final (
@@ -159,7 +159,7 @@ CREATE TABLE DROP_DATABASE.Final (
     CONSTRAINT FK_Final_Curso FOREIGN KEY (curso)
         REFERENCES DROP_DATABASE.Curso(codigoCurso)
 );
-GO
+
 
 -- FINAL RENDIDO
 CREATE TABLE DROP_DATABASE.Final_rendido (
@@ -176,7 +176,7 @@ CREATE TABLE DROP_DATABASE.Final_rendido (
     CONSTRAINT FK_FinalRendido_Profesor FOREIGN KEY (profesor)
         REFERENCES DROP_DATABASE.Profesor(id)
 );
-GO
+
 
 -- INSCRIPCION A FINAL
 CREATE TABLE DROP_DATABASE.Inscripcion_Final (
@@ -193,7 +193,7 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Final (
     CONSTRAINT FK_InscripcionFinal_Profesor FOREIGN KEY (profesor)
         REFERENCES DROP_DATABASE.Profesor(id)
 );
-GO
+
 
 ------------------------------------------------------------
 -- ENCUESTAS
@@ -424,6 +424,7 @@ CREATE INDEX IX_Inscripcion_Curso_Curso ON DROP_DATABASE.Inscripcion_Curso(codig
 CREATE INDEX IX_TP_Alumno_Curso ON DROP_DATABASE.TP_Alumno(curso);
 CREATE INDEX IX_Factura_Alumno ON DROP_DATABASE.Factura(legajoAlumno);
 CREATE INDEX IX_Pago_Factura ON DROP_DATABASE.Pago(id);
+CREATE UNIQUE INDEX UX_Periodo_AnioMes ON DROP_DATABASE.Periodo(periodoAnio, periodoMes);
 
 
 ---------------------------------------------------
@@ -448,15 +449,15 @@ CHECK (mail IS NULL OR mail LIKE '%_@_%._%');
 -- Validar rangos de notas
 ALTER TABLE DROP_DATABASE.Evaluacion_Rendida
 ADD CONSTRAINT CK_EvaluacionRendida_NotaValida 
-CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL); --Tiene que ser null?
+CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
 
 ALTER TABLE DROP_DATABASE.TP_Alumno
 ADD CONSTRAINT CK_TPAlumno_NotaValida 
-CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL); --Tiene que ser null?
+CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL);
 
 ALTER TABLE DROP_DATABASE.Final_rendido
-ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL); --Tiene que ser null?
-GO
+ADD CONSTRAINT CK_FinalRendido_NotaValida CHECK (nota BETWEEN 1 AND 10 OR nota IS NULL); 
+
 
 -- Validar que las fechas de nacimiento sean razonables
 ALTER TABLE DROP_DATABASE.Alumno
@@ -472,8 +473,7 @@ CHECK (fechaNacimiento <= GETDATE() AND fechaNacimiento > '1900-01-01');
 -- ---------------------------------------
 
 /* Bloque 1: Instituciones, Turnos, Dia_Semana, Provincias */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     INSERT INTO DROP_DATABASE.Institucion (nombre, razonSocial, cuit)
     SELECT DISTINCT Institucion_Nombre, Institucion_RazonSocial, Institucion_Cuit
@@ -511,17 +511,9 @@ BEGIN TRY
     WHERE Alumno_Provincia IS NOT NULL
       AND Alumno_Provincia NOT IN (SELECT nombre FROM DROP_DATABASE.Provincia);
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en bloque 1: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+
 
 /* Bloque 2: Localidades (normalización) */
-BEGIN TRY
-    BEGIN TRAN;
 
     ;WITH RawSrc AS (
         SELECT LTRIM(RTRIM(REPLACE(m.Sede_Localidad,';',''))) AS nombre_clean, p.id AS provinciaId
@@ -567,17 +559,9 @@ BEGIN TRY
     INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
     SELECT nombre_clean, provinciaId FROM ToInsert;
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error al insertar localidades: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+ 
 
 /* Bloque 3: Sedes y Profesores */
-BEGIN TRY
-    BEGIN TRAN;
 
 
 INSERT INTO DROP_DATABASE.Sede (nombre, telefono, direccion, mail, localidadId, institucionId)
@@ -635,17 +619,9 @@ WHERE m.Profesor_Apellido IS NOT NULL
 
 
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en sedes/profesores: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+
 
 /* Bloque 4: Categorias y Cursos (preservo Curso_Codigo del origen) */
-BEGIN TRY
-    BEGIN TRAN;
 
     INSERT INTO DROP_DATABASE.Categoria(nombre)
     SELECT DISTINCT Curso_Categoria FROM gd_esquema.Maestra
@@ -677,17 +653,10 @@ BEGIN TRY
 
     SET IDENTITY_INSERT DROP_DATABASE.Curso OFF;
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en cursos: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+
 
 /* Bloque 5: Dias, Modulos y Modulo_x_Curso */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     INSERT INTO DROP_DATABASE.Dia_Cursado (diaSemanaId, codigoCurso)
     SELECT DISTINCT ds.id, c.codigoCurso
@@ -712,17 +681,10 @@ BEGIN TRY
     WHERE ma.Curso_Codigo IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo_x_Curso mc WHERE mc.cursoId = c.codigoCurso AND mc.moduloId = m.id);
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en dias/modulos: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+   
 
 /* Bloque 6: Alumnos (NORMALIZADO por legajo numérico, PRIORIDAD: DNI) */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     ;WITH Src AS (
         SELECT
@@ -776,14 +738,8 @@ BEGIN TRY
     WHERE r.rn = 1
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Alumno a WHERE a.legajoAlumno = r.legajo_num);
 
-    COMMIT TRAN;
 
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en insert alumnos: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+
 
 /* Bloque 7: TP_Alumno, Inscripcion_Curso, Final, Final_rendido, Inscripcion_Final
    Correcciones principales:
@@ -791,8 +747,7 @@ GO
    - Final: insertamos sin tocar identity (Final.Final_Nro será generado)
    - Final_rendido y Inscripcion_Final: insertamos sin tocar las columnas identity
 */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     -- TP_Alumno
     INSERT INTO DROP_DATABASE.TP_Alumno (legajoAlumno, nota, fechaEvaluacion, curso)
@@ -854,20 +809,13 @@ BEGIN TRY
     JOIN DROP_DATABASE.Profesor p ON p.dni = m.Profesor_Dni
     join DROP_DATABASE.Final f ON f.fecha=m.Examen_Final_Fecha and f.hora=m.Examen_Final_Hora and (m.Curso_Codigo is null or f.curso=m.Curso_Codigo)
     WHERE m.Inscripcion_Final_Nro IS NOT NULL
-    set IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final on;
+    set IDENTITY_INSERT DROP_DATABASE.Inscripcion_Final off;
 
-    COMMIT TRAN;
 
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en bloque finales/inscripciones: ' + ERROR_MESSAGE();
-END CATCH;
-GO
+
 
 /* Bloque 8: Encuestas y detalles */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     INSERT INTO DROP_DATABASE.Encuesta (cursoId)
     SELECT DISTINCT c.codigoCurso
@@ -921,19 +869,11 @@ BEGIN TRY
           AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Detalle_Encuesta_Respondida der WHERE der.preguntaId = p.id AND der.encuestaRespondidaId = er.id);
 
         SET @m = @m + 1;
-    END
+        END
 
-    COMMIT TRAN;
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en bloque encuestas: ' + ERROR_MESSAGE();
-END CATCH;
-GO
 
 /* Bloque 9: Pagos, Facturas, Periodos, Detalle_Factura, Evaluaciones y Evaluacion_Rendida (respetando trigger) */
-BEGIN TRY
-    BEGIN TRAN;
+
 
     INSERT INTO DROP_DATABASE.Medio_Pago (medioPago)
     SELECT DISTINCT Pago_MedioPago FROM gd_esquema.Maestra
@@ -955,10 +895,26 @@ BEGIN TRY
     WHERE m.Pago_Fecha IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Pago p WHERE p.facturaNumero = f.facturaNumero AND p.importe = m.Pago_Importe AND p.fecha = TRY_CONVERT(datetime2(6), m.Pago_Fecha));
 
+    
     INSERT INTO DROP_DATABASE.Periodo (periodoAnio, periodoMes)
-    SELECT DISTINCT Periodo_Anio, Periodo_Mes FROM gd_esquema.Maestra
-    WHERE Periodo_Anio IS NOT NULL AND Periodo_Mes IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Periodo per WHERE per.periodoAnio = gd_esquema.Maestra.Periodo_Anio AND per.periodoMes = gd_esquema.Maestra.Periodo_Mes);
+    SELECT g.anio, g.mes
+    FROM (
+        SELECT 
+            CAST(m.Periodo_Anio AS INT) AS anio,
+            CAST(m.Periodo_Mes AS INT) AS mes
+        FROM gd_esquema.Maestra m
+        WHERE m.Periodo_Anio IS NOT NULL
+          AND m.Periodo_Mes IS NOT NULL
+        GROUP BY CAST(m.Periodo_Anio AS INT), CAST(m.Periodo_Mes AS INT)
+    ) g
+    WHERE NOT EXISTS (
+        SELECT 1 FROM DROP_DATABASE.Periodo p
+        WHERE p.periodoAnio = g.anio
+          AND p.periodoMes = g.mes
+    );
+
+   
+
 
     INSERT INTO DROP_DATABASE.Detalle_Factura (codigoCurso, importe, facturaNumero, periodoId)
     SELECT DISTINCT c.codigoCurso, m.Detalle_Factura_Importe, f.facturaNumero, p.id
@@ -996,71 +952,3 @@ BEGIN TRY
     WHERE ma.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx WHERE mx.evaluacionId = e.id AND mx.modulo = mxc.id);
 
-    COMMIT TRAN;
-
-END TRY
-BEGIN CATCH
-    ROLLBACK TRAN;
-    PRINT 'Error en bloque pagos/evaluaciones: ' + ERROR_MESSAGE();
-END CATCH;
-GO
-
-GO
-
-
-
-CREATE TRIGGER DROP_DATABASE.trg_validarCursoActivoInscripcion
-ON DROP_DATABASE.Inscripcion_Curso
-INSTEAD OF INSERT
-AS
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = i.codigoCurso
-        WHERE c.fechaFin < GETDATE()
-    )
-    BEGIN
-        RAISERROR('No se puede inscribir a un curso que ya finalizó.', 16, 1);
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
-    IF EXISTS (
-        SELECT 1
-        FROM DROP_DATABASE.Inscripcion_Curso ic
-        JOIN inserted i ON ic.legajoAlumno = i.legajoAlumno AND ic.codigoCurso = i.codigoCurso
-    )
-    BEGIN
-        RAISERROR('El alumno ya está inscripto en este curso.', 16, 1);
-        ROLLBACK TRANSACTION;
-        RETURN;
-    END
-
-    INSERT INTO DROP_DATABASE.Inscripcion_Curso (fechaInscripcion, legajoAlumno, codigoCurso, estado)
-    SELECT fechaInscripcion, legajoAlumno, codigoCurso, estado FROM inserted;
-END;
-GO
--- Validar que el alumno esté inscripto antes de rendir evaluación
-CREATE TRIGGER DROP_DATABASE.trg_validarInscripcionEvaluacion
-ON DROP_DATABASE.Evaluacion_Rendida
-FOR INSERT
-AS
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM DROP_DATABASE.Inscripcion_Curso ic
-            JOIN DROP_DATABASE.Evaluacion e ON e.cursoId = ic.codigoCurso
-            WHERE ic.legajoAlumno = i.legajoAlumno
-            AND e.id = i.evaluacionId
-            AND ic.estado = 'aprobada'  -- o el estado que indique inscripción activa
-        )
-    )
-    BEGIN
-        RAISERROR('El alumno debe estar inscripto en el curso para rendir evaluación.', 16, 1);
-        ROLLBACK TRANSACTION;
-    END
-END;
-GO
