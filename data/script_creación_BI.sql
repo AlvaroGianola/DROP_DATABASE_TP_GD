@@ -183,6 +183,8 @@ GROUP BY
 
 GO
 
+
+
 CREATE VIEW DROP_DATABASE.vw_encuestas AS
 SELECT DISTINCT
     YEAR(cu.fechaInicio) AS anio,
@@ -238,4 +240,156 @@ GROUP BY
         ELSE 'Insatisfecho'
     END;
 
+GO
 
+CREATE TABLE DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR (
+    idRangoAlumno INT PRIMARY KEY,
+    descripcion VARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_RANGO_ETARIO_ALUMNO (
+    idRangoAlumno INT PRIMARY KEY,
+    descripcion VARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_TIEMPO (
+    idTiempo INT PRIMARY KEY,
+    anio INT,
+    mes TINYINT,
+    cuatrimestre TINYINT,
+    semestre TINYINT
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_TURNO (
+    idTurno INT PRIMARY KEY,
+    turno VARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_MEDIO_PAGO (
+    idMedioPago INT PRIMARY KEY,
+    nombre VARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_BLOQUE_SATISFACCION (
+    idBloque INT PRIMARY KEY,
+    descripcion VARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_SEDE (
+    idSede INT PRIMARY KEY,
+    nombre NVARCHAR(255)
+);
+
+CREATE TABLE DROP_DATABASE.BI_DIM_CATEGORIA (
+    idCategoria INT PRIMARY KEY,
+    categoria VARCHAR(255)
+);
+
+
+CREATE TABLE DROP_DATABASE.BI_FACT_FACTURACION (
+    id_tiempo INT,
+    id_sede INT,
+    id_categoria INT,
+    importe_total FLOAT NULL,
+    importe_adeudado FLOAT NULL,
+    CONSTRAINT PK_FACT_FACTURACION PRIMARY KEY (id_tiempo, id_sede, id_categoria),
+    CONSTRAINT FK_FACT_FAC_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_FACT_FAC_SEDE FOREIGN KEY (id_sede)
+        REFERENCES DROP_DATABASE.BI_DIM_SEDE(idSede),
+    CONSTRAINT FK_FACT_FAC_CATEGORIA FOREIGN KEY (id_categoria)
+        REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria)
+);
+
+CREATE TABLE DROP_DATABASE.BI_FACT_PAGOS (
+    id_tiempo INT,
+    id_medio_pago INT,
+    monto_pagado FLOAT NULL,
+    monto_fuera_termino FLOAT NULL,
+    CONSTRAINT PK_FACT_PAGOS PRIMARY KEY (id_tiempo, id_medio_pago),
+    CONSTRAINT FK_PAGOS_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_PAGOS_MEDIO FOREIGN KEY (id_medio_pago)
+        REFERENCES DROP_DATABASE.BI_DIM_MEDIO_PAGO(idMedioPago)
+);
+
+CREATE TABLE DROP_DATABASE.BI_FACT_ENCUESTAS (
+    id_tiempo INT,
+    id_sede INT,
+    id_categoria INT,
+    id_rango_profesor INT,
+    id_bloque INT,
+    cant_satisfechos INT NULL,
+    cant_neutrales INT NULL,
+    cant_insatisfechos INT NULL,
+    CONSTRAINT PK_FACT_ENCUESTAS PRIMARY KEY
+        (id_tiempo, id_sede, id_categoria, id_rango_profesor, id_bloque),
+    CONSTRAINT FK_ENC_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_ENC_SEDE FOREIGN KEY (id_sede)
+        REFERENCES DROP_DATABASE.BI_DIM_SEDE(idSede),
+    CONSTRAINT FK_ENC_CATEGORIA FOREIGN KEY (id_categoria)
+        REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria),
+    CONSTRAINT FK_ENC_RANGO_PROF FOREIGN KEY (id_rango_profesor)
+        REFERENCES DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR(idRangoAlumno),
+    CONSTRAINT FK_ENC_BLOQUE FOREIGN KEY (id_bloque)
+        REFERENCES DROP_DATABASE.BI_DIM_BLOQUE_SATISFACCION(idBloque)
+);
+
+CREATE TABLE DROP_DATABASE.BI_FACT_CURSADA (
+    id_tiempo INT,
+    id_sede INT,
+    id_categoria INT,
+    cant_aprobados INT NULL,
+    cant_desaprobados INT NULL,
+    CONSTRAINT PK_FACT_CURSADA PRIMARY KEY (id_tiempo, id_sede, id_categoria),
+    CONSTRAINT FK_CURS_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_CURS_SEDE FOREIGN KEY (id_sede)
+        REFERENCES DROP_DATABASE.BI_DIM_SEDE(idSede),
+    CONSTRAINT FK_CURS_CATEGORIA FOREIGN KEY (id_categoria)
+        REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria)
+);
+
+CREATE TABLE DROP_DATABASE.BI_FACT_INSCRIPCIONES (
+    id_tiempo INT,
+    id_sede INT,
+    id_categoria INT,
+    id_turno INT,
+    cant_inscripciones INT NULL,
+    cant_rechazos INT NULL,
+    cant_aprobadas INT NULL,
+    CONSTRAINT PK_FACT_INSCRIPCIONES PRIMARY KEY
+        (id_tiempo, id_sede, id_categoria, id_turno),
+    CONSTRAINT FK_INS_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_INS_SEDE FOREIGN KEY (id_sede)
+        REFERENCES DROP_DATABASE.BI_DIM_SEDE(idSede),
+    CONSTRAINT FK_INS_CATEGORIA FOREIGN KEY (id_categoria)
+        REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria),
+    CONSTRAINT FK_INS_TURNO FOREIGN KEY (id_turno)
+        REFERENCES DROP_DATABASE.BI_DIM_TURNO(idTurno)
+);
+
+CREATE TABLE DROP_DATABASE.BI_FACT_FINALES (
+    id_tiempo INT,
+    id_sede INT,
+    id_categoria INT,
+    id_rango_profesor INT,
+    id_rango_alumno INT,
+    cant_presentes FLOAT NULL,
+    cant_ausentes FLOAT NULL,
+    nota_promedio INT NULL,
+    CONSTRAINT PK_FACT_FINALES PRIMARY KEY
+        (id_tiempo, id_sede, id_categoria, id_rango_profesor, id_rango_alumno),
+    CONSTRAINT FK_FIN_TIEMPO FOREIGN KEY (id_tiempo)
+        REFERENCES DROP_DATABASE.BI_DIM_TIEMPO(idTiempo),
+    CONSTRAINT FK_FIN_SEDE FOREIGN KEY (id_sede)
+        REFERENCES DROP_DATABASE.BI_DIM_SEDE(idSede),
+    CONSTRAINT FK_FIN_CATEGORIA FOREIGN KEY (id_categoria)
+        REFERENCES DROP_DATABASE.BI_DIM_CATEGORIA(idCategoria),
+    CONSTRAINT FK_FIN_RANGO_PROF FOREIGN KEY (id_rango_profesor)
+        REFERENCES DROP_DATABASE.BI_DIM_RANGO_ETARIO_PROFESOR(idRangoAlumno),
+    CONSTRAINT FK_FIN_RANGO_ALUM FOREIGN KEY (id_rango_alumno)
+        REFERENCES DROP_DATABASE.BI_DIM_RANGO_ETARIO_ALUMNO(idRangoAlumno)
+);
