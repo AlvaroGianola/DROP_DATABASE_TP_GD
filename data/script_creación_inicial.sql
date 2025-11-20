@@ -686,57 +686,25 @@ WHERE m.Profesor_Apellido IS NOT NULL
 /* Bloque 6: Alumnos (NORMALIZADO por legajo numérico, PRIORIDAD: DNI) */
 
 
-    ;WITH Src AS (
-        SELECT
-            m.*,
-            TRY_CAST(LTRIM(RTRIM(m.Alumno_Legajo)) AS BIGINT) AS legajo_num,
-            CASE WHEN TRY_CAST(m.Alumno_Dni AS BIGINT) IS NOT NULL THEN 1 ELSE 0 END AS has_dni,
-            CASE WHEN m.Alumno_Mail IS NOT NULL AND CHARINDEX('@', m.Alumno_Mail) > 0 THEN 1 ELSE 0 END AS has_mail,
-            CASE WHEN TRY_CONVERT(datetime2(6), m.Alumno_FechaNacimiento) IS NOT NULL THEN 1 ELSE 0 END AS has_fecha,
-            CASE WHEN m.Curso_Codigo IS NOT NULL THEN 1 ELSE 0 END AS has_curso,
-            (
-                CASE WHEN m.Alumno_Nombre IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Apellido IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Dni IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Localidad IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Direccion IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_FechaNacimiento IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Mail IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Alumno_Telefono IS NOT NULL THEN 1 ELSE 0 END
-                + CASE WHEN m.Curso_Codigo IS NOT NULL THEN 1 ELSE 0 END
-            ) AS completeness_score
-        FROM gd_esquema.Maestra m
-        WHERE m.Alumno_Legajo IS NOT NULL
-    ),
-    Ranked AS (
-        SELECT s.*,
-               ROW_NUMBER() OVER (
-                   PARTITION BY s.legajo_num
-                   ORDER BY
-                       s.has_dni DESC, s.has_mail DESC, s.has_fecha DESC, s.has_curso DESC, s.completeness_score DESC,
-                       TRY_CONVERT(datetime2(6), s.Alumno_FechaNacimiento) DESC
-               ) AS rn
-        FROM Src s
-        WHERE s.legajo_num IS NOT NULL
-    )
+
     INSERT INTO DROP_DATABASE.Alumno (legajoAlumno, nombre, apellido, dni, localidad_id, domicilio, fechaNacimiento, direccion, mail, telefono)
-    SELECT
-        r.legajo_num,
-        r.Alumno_Nombre,
-        r.Alumno_Apellido,
-        CASE WHEN TRY_CAST(r.Alumno_Dni AS BIGINT) IS NOT NULL THEN TRY_CAST(r.Alumno_Dni AS INT) ELSE NULL END,
+    SELECT DISTINCT
+        m.Alumno_Legajo,
+        m.Alumno_Nombre,
+        m.Alumno_Apellido,
+        CASE WHEN TRY_CAST(m.Alumno_Dni AS BIGINT) IS NOT NULL THEN TRY_CAST(m.Alumno_Dni AS INT) ELSE NULL END,
         (SELECT TOP 1 l.id 
         FROM DROP_DATABASE.Localidad l 
         JOIN DROP_DATABASE.Provincia p ON p.id = l.provinciaId 
-        WHERE UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI = UPPER(LTRIM(RTRIM(REPLACE(r.Alumno_Localidad,';','')))) COLLATE Latin1_General_CI_AI),
-        r.Alumno_Direccion,
-        TRY_CONVERT(datetime2(6), r.Alumno_FechaNacimiento),
-        r.Alumno_Direccion,
-        r.Alumno_Mail,
-        r.Alumno_Telefono
-    FROM Ranked r
-    WHERE r.rn = 1
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Alumno a WHERE a.legajoAlumno = r.legajo_num);
+        WHERE UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI = UPPER(LTRIM(RTRIM(REPLACE(m.Alumno_Localidad,';','')))) COLLATE Latin1_General_CI_AI),
+        m.Alumno_Direccion,
+        TRY_CONVERT(datetime2(6), m.Alumno_FechaNacimiento),
+        m.Alumno_Direccion,
+        m.Alumno_Mail,
+        m.Alumno_Telefono
+    FROM gd_esquema.Maestra m
+    where m.Alumno_Legajo IS NOT NULL
+    
 
 
 
