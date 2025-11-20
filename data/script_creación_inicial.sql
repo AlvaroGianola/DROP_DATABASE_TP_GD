@@ -140,8 +140,8 @@ CREATE TABLE DROP_DATABASE.Inscripcion_Curso (
     fechaInscripcion DATETIME2(6) NOT NULL DEFAULT (SYSDATETIME()),
     legajoAlumno BIGINT NOT NULL, 
     codigoCurso BIGINT NOT NULL,
-    estado NVARCHAR(255) NULL DEFAULT ('pendiente'),
-    fechaRespuesta DATETIME2(6) NULL,
+    estado NVARCHAR(255) NOT NULL DEFAULT ('pendiente'),
+    fechaRespuesta DATETIME2(6) NOT NULL,
     CONSTRAINT FK_InscripcionCurso_Alumno FOREIGN KEY (legajoAlumno)
         REFERENCES DROP_DATABASE.Alumno(legajoAlumno),
     CONSTRAINT FK_InscripcionCurso_Curso FOREIGN KEY (codigoCurso)
@@ -534,7 +534,7 @@ CHECK (fechaNacimiento <= GETDATE() AND fechaNacimiento > '1900-01-01');
 
         UNION ALL
 
-        SELECT LTRIM(RTRIM(REPLACE(m.Alumno_Localidad,';',''))), p.id
+        SELECT m.Alumno_Localidad, p.id
         FROM gd_esquema.Maestra m
         JOIN DROP_DATABASE.Provincia p
             ON UPPER(LTRIM(RTRIM(REPLACE(p.nombre,';','')))) COLLATE Latin1_General_CI_AI
@@ -553,7 +553,7 @@ CHECK (fechaNacimiento <= GETDATE() AND fechaNacimiento > '1900-01-01');
         SELECT r.nombre_clean, r.provinciaId
         FROM Ranked r
         LEFT JOIN DROP_DATABASE.Localidad l
-            ON r.nombre_clean COLLATE Latin1_General_CI_AI = LTRIM(RTRIM(l.nombre)) COLLATE Latin1_General_CI_AI
+            ON r.nombre_clean  = l.nombre
         WHERE r.rn = 1 AND l.nombre IS NULL
     )
     INSERT INTO DROP_DATABASE.Localidad (nombre, provinciaId)
@@ -696,7 +696,7 @@ WHERE m.Profesor_Apellido IS NOT NULL
         (SELECT TOP 1 l.id 
         FROM DROP_DATABASE.Localidad l 
         JOIN DROP_DATABASE.Provincia p ON p.id = l.provinciaId 
-        WHERE UPPER(LTRIM(RTRIM(REPLACE(l.nombre,';','')))) COLLATE Latin1_General_CI_AI = UPPER(LTRIM(RTRIM(REPLACE(m.Alumno_Localidad,';','')))) COLLATE Latin1_General_CI_AI),
+        WHERE l.nombre = m.Alumno_Localidad),
         m.Alumno_Direccion,
         TRY_CONVERT(datetime2(6), m.Alumno_FechaNacimiento),
         m.Alumno_Direccion,
@@ -704,9 +704,6 @@ WHERE m.Profesor_Apellido IS NOT NULL
         m.Alumno_Telefono
     FROM gd_esquema.Maestra m
     where m.Alumno_Legajo IS NOT NULL
-    
-
-
 
 
 /* Bloque 7: TP_Alumno, Inscripcion_Curso, Final, Final_rendido, Inscripcion_Final
@@ -785,138 +782,138 @@ WHERE m.Profesor_Apellido IS NOT NULL
 /* Bloque 8: Encuestas y detalles */
 
 
-    INSERT INTO DROP_DATABASE.Encuesta (cursoId)
-    SELECT DISTINCT c.codigoCurso
-    FROM gd_esquema.Maestra ma
-    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = ma.Curso_Codigo
-    WHERE (ma.Encuesta_Pregunta1 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta1)) <> '')
-       OR (ma.Encuesta_Pregunta2 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta2)) <> '')
-       OR (ma.Encuesta_Pregunta3 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta3)) <> '')
-       OR (ma.Encuesta_Pregunta4 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta4)) <> '')
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Encuesta e WHERE e.cursoId = c.codigoCurso);
+INSERT INTO DROP_DATABASE.Encuesta (cursoId)
+SELECT DISTINCT c.codigoCurso
+FROM gd_esquema.Maestra ma
+JOIN DROP_DATABASE.Curso c ON c.codigoCurso = ma.Curso_Codigo
+WHERE (ma.Encuesta_Pregunta1 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta1)) <> '')
+    OR (ma.Encuesta_Pregunta2 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta2)) <> '')
+    OR (ma.Encuesta_Pregunta3 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta3)) <> '')
+    OR (ma.Encuesta_Pregunta4 IS NOT NULL AND LTRIM(RTRIM(ma.Encuesta_Pregunta4)) <> '')
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Encuesta e WHERE e.cursoId = c.codigoCurso);
 
-    DECLARE @n INT = 1;
-    WHILE @n <= 4
-    BEGIN
-        INSERT INTO DROP_DATABASE.Pregunta (pregunta, nroPregunta, encuestaId)
-        SELECT DISTINCT
-            CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END,
-            @n,
-            e.encuestaId
-        FROM gd_esquema.Maestra m
-        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-        JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
-        WHERE (CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END) IS NOT NULL
-          AND LTRIM(RTRIM((CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END))) <> ''
-          AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Pregunta p WHERE p.encuestaId = e.encuestaId AND p.nroPregunta = @n);
-
-        SET @n = @n + 1;
-    END
-
-    INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
-    SELECT DISTINCT TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro), m.Encuesta_Observacion, e.encuestaId
+DECLARE @n INT = 1;
+WHILE @n <= 4
+BEGIN
+    INSERT INTO DROP_DATABASE.Pregunta (pregunta, nroPregunta, encuestaId)
+    SELECT DISTINCT
+        CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END,
+        @n,
+        e.encuestaId
     FROM gd_esquema.Maestra m
     JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
     JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
-    WHERE m.Encuesta_FechaRegistro IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Encuesta_Respondida er WHERE er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro));
+    WHERE (CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END) IS NOT NULL
+        AND LTRIM(RTRIM((CASE @n WHEN 1 THEN m.Encuesta_Pregunta1 WHEN 2 THEN m.Encuesta_Pregunta2 WHEN 3 THEN m.Encuesta_Pregunta3 WHEN 4 THEN m.Encuesta_Pregunta4 END))) <> ''
+        AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Pregunta p WHERE p.encuestaId = e.encuestaId AND p.nroPregunta = @n);
 
-    DECLARE @m INT = 1;
-    WHILE @m <= 4
-    BEGIN
-        INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
-        SELECT DISTINCT p.id, 
-            CASE @m WHEN 1 THEN m.Encuesta_Nota1 WHEN 2 THEN m.Encuesta_Nota2 WHEN 3 THEN m.Encuesta_Nota3 WHEN 4 THEN m.Encuesta_Nota4 END,
-            er.id
-        FROM gd_esquema.Maestra m
-        JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-        JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
-        JOIN DROP_DATABASE.Encuesta_Respondida er ON er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro)
-        JOIN DROP_DATABASE.Pregunta p ON p.encuestaId = e.encuestaId AND p.nroPregunta = @m
-        WHERE (CASE @m WHEN 1 THEN m.Encuesta_Nota1 WHEN 2 THEN m.Encuesta_Nota2 WHEN 3 THEN m.Encuesta_Nota3 WHEN 4 THEN m.Encuesta_Nota4 END) IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Detalle_Encuesta_Respondida der WHERE der.preguntaId = p.id AND der.encuestaRespondidaId = er.id);
+    SET @n = @n + 1;
+END
 
-        SET @m = @m + 1;
-        END
+INSERT INTO DROP_DATABASE.Encuesta_Respondida (fechaRegistro, encuestaObservacion, encuestaId)
+SELECT DISTINCT TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro), m.Encuesta_Observacion, e.encuestaId
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
+WHERE m.Encuesta_FechaRegistro IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Encuesta_Respondida er WHERE er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro));
+
+DECLARE @m INT = 1;
+WHILE @m <= 4
+BEGIN
+    INSERT INTO DROP_DATABASE.Detalle_Encuesta_Respondida (preguntaId, respuestaNota, encuestaRespondidaId)
+    SELECT DISTINCT p.id, 
+        CASE @m WHEN 1 THEN m.Encuesta_Nota1 WHEN 2 THEN m.Encuesta_Nota2 WHEN 3 THEN m.Encuesta_Nota3 WHEN 4 THEN m.Encuesta_Nota4 END,
+        er.id
+    FROM gd_esquema.Maestra m
+    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+    JOIN DROP_DATABASE.Encuesta e ON e.cursoId = c.codigoCurso
+    JOIN DROP_DATABASE.Encuesta_Respondida er ON er.encuestaId = e.encuestaId AND er.fechaRegistro = TRY_CONVERT(datetime2(6), m.Encuesta_FechaRegistro)
+    JOIN DROP_DATABASE.Pregunta p ON p.encuestaId = e.encuestaId AND p.nroPregunta = @m
+    WHERE (CASE @m WHEN 1 THEN m.Encuesta_Nota1 WHEN 2 THEN m.Encuesta_Nota2 WHEN 3 THEN m.Encuesta_Nota3 WHEN 4 THEN m.Encuesta_Nota4 END) IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Detalle_Encuesta_Respondida der WHERE der.preguntaId = p.id AND der.encuestaRespondidaId = er.id);
+
+    SET @m = @m + 1;
+    END
 
 
 /* Bloque 9: Pagos, Facturas, Periodos, Detalle_Factura, Evaluaciones y Evaluacion_Rendida (respetando trigger) */
 
 
-    INSERT INTO DROP_DATABASE.Medio_Pago (medioPago)
-    SELECT DISTINCT Pago_MedioPago FROM gd_esquema.Maestra
-    WHERE Pago_MedioPago IS NOT NULL
-      AND Pago_MedioPago NOT IN (SELECT medioPago FROM DROP_DATABASE.Medio_Pago);
+INSERT INTO DROP_DATABASE.Medio_Pago (medioPago)
+SELECT DISTINCT Pago_MedioPago FROM gd_esquema.Maestra
+WHERE Pago_MedioPago IS NOT NULL
+    AND Pago_MedioPago NOT IN (SELECT medioPago FROM DROP_DATABASE.Medio_Pago);
 
-    INSERT INTO DROP_DATABASE.Factura (facturaNumero, fechaEmision, fechaVencimiento, importeTotal, legajoAlumno)
-    SELECT DISTINCT TRY_CAST(f.Factura_Numero AS BIGINT), TRY_CONVERT(datetime2(6), f.Factura_FechaEmision), TRY_CONVERT(datetime2(6), f.Factura_FechaVencimiento), f.Factura_Total, a.legajoAlumno
-    FROM gd_esquema.Maestra f
-    JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = TRY_CAST(LTRIM(RTRIM(f.Alumno_Legajo)) AS BIGINT)
-    WHERE f.Factura_Numero IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Factura fa WHERE fa.facturaNumero = TRY_CAST(f.Factura_Numero AS BIGINT));
+INSERT INTO DROP_DATABASE.Factura (facturaNumero, fechaEmision, fechaVencimiento, importeTotal, legajoAlumno)
+SELECT DISTINCT TRY_CAST(f.Factura_Numero AS BIGINT), TRY_CONVERT(datetime2(6), f.Factura_FechaEmision), TRY_CONVERT(datetime2(6), f.Factura_FechaVencimiento), f.Factura_Total, a.legajoAlumno
+FROM gd_esquema.Maestra f
+JOIN DROP_DATABASE.Alumno a ON a.legajoAlumno = TRY_CAST(LTRIM(RTRIM(f.Alumno_Legajo)) AS BIGINT)
+WHERE f.Factura_Numero IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Factura fa WHERE fa.facturaNumero = TRY_CAST(f.Factura_Numero AS BIGINT));
 
-    INSERT INTO DROP_DATABASE.Pago (fecha, importe, medioPagoId, facturaNumero)
-    SELECT DISTINCT TRY_CONVERT(datetime2(6), m.Pago_Fecha), m.Pago_Importe, mp.id, f.facturaNumero
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
-    JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
-    WHERE m.Pago_Fecha IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Pago p WHERE p.facturaNumero = f.facturaNumero AND p.importe = m.Pago_Importe AND p.fecha = TRY_CONVERT(datetime2(6), m.Pago_Fecha));
+INSERT INTO DROP_DATABASE.Pago (fecha, importe, medioPagoId, facturaNumero)
+SELECT DISTINCT TRY_CONVERT(datetime2(6), m.Pago_Fecha), m.Pago_Importe, mp.id, f.facturaNumero
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Medio_Pago mp ON mp.medioPago = m.Pago_MedioPago
+JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
+WHERE m.Pago_Fecha IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Pago p WHERE p.facturaNumero = f.facturaNumero AND p.importe = m.Pago_Importe AND p.fecha = TRY_CONVERT(datetime2(6), m.Pago_Fecha));
 
     
-    INSERT INTO DROP_DATABASE.Periodo (periodoAnio, periodoMes)
-    SELECT g.anio, g.mes
-    FROM (
-        SELECT 
-            CAST(m.Periodo_Anio AS INT) AS anio,
-            CAST(m.Periodo_Mes AS INT) AS mes
-        FROM gd_esquema.Maestra m
-        WHERE m.Periodo_Anio IS NOT NULL
-          AND m.Periodo_Mes IS NOT NULL
-        GROUP BY CAST(m.Periodo_Anio AS INT), CAST(m.Periodo_Mes AS INT)
-    ) g
-    WHERE NOT EXISTS (
-        SELECT 1 FROM DROP_DATABASE.Periodo p
-        WHERE p.periodoAnio = g.anio
-          AND p.periodoMes = g.mes
-    );
+INSERT INTO DROP_DATABASE.Periodo (periodoAnio, periodoMes)
+SELECT g.anio, g.mes
+FROM (
+    SELECT 
+        CAST(m.Periodo_Anio AS INT) AS anio,
+        CAST(m.Periodo_Mes AS INT) AS mes
+    FROM gd_esquema.Maestra m
+    WHERE m.Periodo_Anio IS NOT NULL
+        AND m.Periodo_Mes IS NOT NULL
+    GROUP BY CAST(m.Periodo_Anio AS INT), CAST(m.Periodo_Mes AS INT)
+) g
+WHERE NOT EXISTS (
+    SELECT 1 FROM DROP_DATABASE.Periodo p
+    WHERE p.periodoAnio = g.anio
+        AND p.periodoMes = g.mes
+);
 
    
 
 
-    INSERT INTO DROP_DATABASE.Detalle_Factura (codigoCurso, importe, facturaNumero, periodoId)
-    SELECT DISTINCT c.codigoCurso, m.Detalle_Factura_Importe, f.facturaNumero, p.id
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
-    JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
-    JOIN DROP_DATABASE.Periodo p ON p.periodoAnio = m.Periodo_Anio AND p.periodoMes = m.Periodo_Mes
-    WHERE m.Detalle_Factura_Importe IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Detalle_Factura df WHERE df.facturaNumero = f.facturaNumero AND df.codigoCurso = c.codigoCurso);
+INSERT INTO DROP_DATABASE.Detalle_Factura (codigoCurso, importe, facturaNumero, periodoId)
+SELECT DISTINCT c.codigoCurso, m.Detalle_Factura_Importe, f.facturaNumero, p.id
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Curso c ON c.codigoCurso = m.Curso_Codigo
+JOIN DROP_DATABASE.Factura f ON f.facturaNumero = TRY_CAST(m.Factura_Numero AS BIGINT)
+JOIN DROP_DATABASE.Periodo p ON p.periodoAnio = m.Periodo_Anio AND p.periodoMes = m.Periodo_Mes
+WHERE m.Detalle_Factura_Importe IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Detalle_Factura df WHERE df.facturaNumero = f.facturaNumero AND df.codigoCurso = c.codigoCurso);
 
-    INSERT INTO DROP_DATABASE.Evaluacion (fecha, cursoId)
-    SELECT DISTINCT TRY_CONVERT(datetime2(6), Evaluacion_Curso_fechaEvaluacion), Curso_Codigo
-    FROM gd_esquema.Maestra
-    WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL
-      AND EXISTS (SELECT 1 FROM DROP_DATABASE.Curso c WHERE c.codigoCurso = gd_esquema.Maestra.Curso_Codigo)
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Evaluacion e WHERE e.fecha = TRY_CONVERT(datetime2(6), gd_esquema.Maestra.Evaluacion_Curso_fechaEvaluacion) AND e.cursoId = gd_esquema.Maestra.Curso_Codigo);
+INSERT INTO DROP_DATABASE.Evaluacion (fecha, cursoId)
+SELECT DISTINCT TRY_CONVERT(datetime2(6), Evaluacion_Curso_fechaEvaluacion), Curso_Codigo
+FROM gd_esquema.Maestra
+WHERE Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    AND EXISTS (SELECT 1 FROM DROP_DATABASE.Curso c WHERE c.codigoCurso = gd_esquema.Maestra.Curso_Codigo)
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Evaluacion e WHERE e.fecha = TRY_CONVERT(datetime2(6), gd_esquema.Maestra.Evaluacion_Curso_fechaEvaluacion) AND e.cursoId = gd_esquema.Maestra.Curso_Codigo);
 
 
 
-      INSERT INTO DROP_DATABASE.Evaluacion_Rendida (legajoAlumno, nota, presente, instancia, evaluacionId)
-    SELECT DISTINCT m.Alumno_Legajo, m.Evaluacion_Curso_Nota, m.Evaluacion_Curso_Presente, m.Evaluacion_Curso_Instancia, e.id
-    FROM gd_esquema.Maestra m
-    JOIN DROP_DATABASE.Evaluacion e ON e.fecha = m.Evaluacion_Curso_fechaEvaluacion
-    JOIN DROP_DATABASE.Inscripcion_Curso ic ON ic.legajoAlumno = m.Alumno_Legajo AND ic.codigoCurso = e.cursoId 
-    WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    INSERT INTO DROP_DATABASE.Evaluacion_Rendida (legajoAlumno, nota, presente, instancia, evaluacionId)
+SELECT DISTINCT m.Alumno_Legajo, m.Evaluacion_Curso_Nota, m.Evaluacion_Curso_Presente, m.Evaluacion_Curso_Instancia, e.id
+FROM gd_esquema.Maestra m
+JOIN DROP_DATABASE.Evaluacion e ON e.fecha = m.Evaluacion_Curso_fechaEvaluacion
+JOIN DROP_DATABASE.Inscripcion_Curso ic ON ic.legajoAlumno = m.Alumno_Legajo AND ic.codigoCurso = e.cursoId 
+WHERE m.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
     
     
-    INSERT INTO DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (evaluacionId, modulo)
-    SELECT DISTINCT e.id, mxc.id
-    FROM gd_esquema.Maestra ma
-    JOIN DROP_DATABASE.Evaluacion e ON e.fecha = TRY_CONVERT(datetime2(6), ma.Evaluacion_Curso_fechaEvaluacion)
-    JOIN DROP_DATABASE.Modulo m ON m.nombre = ma.Modulo_Nombre
-    JOIN DROP_DATABASE.Curso c ON c.codigoCurso = ma.Curso_Codigo
-    JOIN DROP_DATABASE.Modulo_x_Curso mxc ON mxc.moduloId = m.id AND mxc.cursoId = c.codigoCurso
-    WHERE ma.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx WHERE mx.evaluacionId = e.id AND mx.modulo = mxc.id);
+INSERT INTO DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion (evaluacionId, modulo)
+SELECT DISTINCT e.id, mxc.id
+FROM gd_esquema.Maestra ma
+JOIN DROP_DATABASE.Evaluacion e ON e.fecha = TRY_CONVERT(datetime2(6), ma.Evaluacion_Curso_fechaEvaluacion)
+JOIN DROP_DATABASE.Modulo m ON m.nombre = ma.Modulo_Nombre
+JOIN DROP_DATABASE.Curso c ON c.codigoCurso = ma.Curso_Codigo
+JOIN DROP_DATABASE.Modulo_x_Curso mxc ON mxc.moduloId = m.id AND mxc.cursoId = c.codigoCurso
+WHERE ma.Evaluacion_Curso_fechaEvaluacion IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM DROP_DATABASE.Modulo_de_curso_tomado_en_evaluacion mx WHERE mx.evaluacionId = e.id AND mx.modulo = mxc.id);
 

@@ -3,25 +3,25 @@ GO
 
 CREATE VIEW DROP_DATABASE.vw_inscripciones AS
 SELECT
-    YEAR(i.fechaInscripcion) AS anio,
-    MONTH(i.fechaInscripcion) AS mes,
-    s.id as sedeId,
-    cat.id as categoriaId,
-    cu.turnoId as turnoId,
+    YEAR(COALESCE(i.fechaInscripcion, '19000101')) AS anio,
+    MONTH(COALESCE(i.fechaInscripcion, '19000101')) AS mes,
+    COALESCE(s.id, 0) as sedeId,
+    COALESCE(cat.id, 0) as categoriaId,
+    COALESCE(cu.turnoId, 0) as turnoId,
     COUNT(*) AS cant_inscripciones,
-    SUM(CASE WHEN i.estado = 'Confirmada' THEN 1 ELSE 0 END) AS cant_confirmadas,
-    SUM(CASE WHEN i.estado = 'Rechazada' THEN 1 ELSE 0 END) AS cant_rechazadas
+    SUM(CASE WHEN COALESCE(i.estado, '') = 'Confirmada' THEN 1 ELSE 0 END) AS cant_confirmadas,
+    SUM(CASE WHEN COALESCE(i.estado, '') = 'Rechazada' THEN 1 ELSE 0 END) AS cant_rechazadas
 FROM DROP_DATABASE.Inscripcion_Curso i
     JOIN DROP_DATABASE.Curso cu ON cu.codigoCurso = i.codigoCurso
     JOIN DROP_DATABASE.Sede s ON s.id = cu.sedeId
     JOIN DROP_DATABASE.Categoria cat ON cat.id = cu.categoriaId
-WHERE i.fechaInscripcion IS NOT NULL
+WHERE i.fechaInscripcion IS NOT NULL AND i.estado IS NOT NULL
 GROUP BY
-    YEAR(i.fechaInscripcion),
-    MONTH(i.fechaInscripcion),
-    s.id,
-    cat.id,
-    cu.turnoId;
+    YEAR(COALESCE(i.fechaInscripcion, '19000101')),
+    MONTH(COALESCE(i.fechaInscripcion, '19000101')),
+    COALESCE(s.id, 0),
+    COALESCE(cat.id, 0),
+    COALESCE(cu.turnoId, 0);
 GO
 
 
@@ -30,13 +30,13 @@ with alumnos_curso as (
     SELECT
         cu.codigoCurso,
         er.legajoAlumno,
-        COALESCE(MIN(er.nota), 0)AS notaMinima,
+        MIN(COALESCE(er.nota, 0)) AS notaMinima,
         COALESCE(tp.nota, 0) AS notaTP,
-        CASE WHEN COALESCE(MIN(er.nota),0) >= 4 
+        CASE WHEN MIN(COALESCE(er.nota,0)) >= 4 
               AND COALESCE(tp.nota,0) >= 4
              THEN 1 ELSE 0 END AS aprobado,
 
-        CASE WHEN COALESCE(MIN(er.nota),0) < 4
+        CASE WHEN MIN(COALESCE(er.nota,0)) < 4
                OR COALESCE(tp.nota,0) < 4
              THEN 1 ELSE 0 END AS desaprobado
     FROM DROP_DATABASE.Curso cu 
@@ -167,11 +167,11 @@ SELECT
     cu.sedeId,
     cu.categoriaId,
 
-    SUM(fact.importeTotal) AS importeTotal,
+    SUM(COALESCE(fact.importeTotal, 0)) AS importeTotal,
 
     SUM(
         CASE 
-            WHEN p.facturaNumero IS NULL THEN fact.importeTotal
+            WHEN p.facturaNumero IS NULL THEN COALESCE(fact.importeTotal, 0)
             ELSE 0
         END
     ) AS importeAdeudado
@@ -218,8 +218,8 @@ SELECT
     -- Índice de satisfacción
     -- ((%satisfechos - %insatisfechos) + 100)/2
     CASE 
-        WHEN COUNT(*) = 0 THEN NULL
-        ELSE ((((SUM(CASE WHEN der.respuestaNota BETWEEN 7 AND 10 THEN 1 END) * 100.0 / COUNT(*))-(SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 4 THEN 1 END) * 100.0 / COUNT(*))) + 100) / 2)
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE ((((SUM(CASE WHEN der.respuestaNota BETWEEN 7 AND 10 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))-(SUM(CASE WHEN der.respuestaNota BETWEEN 1 AND 4 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))) + 100) / 2)
     END AS indice_satisfaccion
 
 FROM DROP_DATABASE.Encuesta_Respondida er
@@ -467,6 +467,7 @@ VALUES
 (3, '35-50'),
 (4, '>50');
 
+
 INSERT INTO DROP_DATABASE.BI_FACT_INSCRIPCIONES
 (id_tiempo, id_sede, id_categoria, id_turno, cant_inscripciones, cant_rechazos, cant_aprobadas)
 SELECT
@@ -477,8 +478,8 @@ SELECT
     cant_inscripciones,
     cant_rechazadas,
     cant_confirmadas
-FROM DROP_DATABASE.vw_inscripciones; --VER (523 filas afectadas) Warning: Null value is eliminated by an aggregate or other SET operation.
-
+FROM DROP_DATABASE.vw_inscripciones --VER (523 filas afectadas) Warning: Null value is eliminated by an aggregate or other SET operation.
+WHERE anio IS NOT NULL AND mes IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.BI_FACT_CURSADA
 (id_tiempo, id_sede, id_categoria, cant_aprobados, cant_desaprobados)
@@ -535,7 +536,8 @@ SELECT
     categoriaId,
     importeTotal,
     importeAdeudado
-FROM DROP_DATABASE.vw_facturacion;
+FROM DROP_DATABASE.vw_facturacion
+WHERE anio IS NOT NULL AND mes IS NOT NULL;
 
 INSERT INTO DROP_DATABASE.BI_FACT_ENCUESTAS
 (id_tiempo, id_sede, id_categoria, id_rango_profesor, 
@@ -559,7 +561,7 @@ SELECT
 FROM DROP_DATABASE.vw_encuestas;
 
 GO
-CREATE VIEW categorías_y_turnos_más_solicitados AS
+CREATE VIEW DROP_DATABASE.categorias_y_turnos_mas_solicitados AS
 SELECT TOP 3
     t.anio,
     s.nombre AS sede,
@@ -574,7 +576,7 @@ JOIN DROP_DATABASE.BI_DIM_TURNO tu ON f.id_turno = tu.idTurno
 ORDER BY f.cant_inscripciones DESC;
 
 GO
-CREATE VIEW tasa_rechazo_inscripciones AS
+CREATE VIEW DROP_DATABASE.tasa_rechazo_inscripciones AS
 SELECT
     t.anio,
     t.mes,
@@ -587,7 +589,7 @@ GROUP BY t.anio, t.mes, s.nombre;
 
 GO
 
-CREATE VIEW comparación_desempeño_cursada_por_sede AS
+CREATE VIEW DROP_DATABASE.comparación_desempeño_cursada_por_sede AS
 SELECT
     t.anio,
     s.nombre AS sede,
@@ -600,7 +602,7 @@ GROUP BY t.anio, s.nombre;
 
 GO
 
-CREATE VIEW tiempo_promedio_finalización_curso AS
+CREATE VIEW DROP_DATABASE.tiempo_promedio_finalización_curso AS
 SELECT
     YEAR(cu.fechaInicio) AS anio,
     c.nombre AS categoria,
@@ -614,7 +616,7 @@ GROUP BY YEAR(cu.fechaInicio), c.nombre;
 
 GO
 
-CREATE VIEW nota_promedio_finales AS
+CREATE VIEW DROP_DATABASE.nota_promedio_finales AS
 SELECT
     t.anio,
     t.semestre,
@@ -629,7 +631,7 @@ GROUP BY t.anio, t.semestre, c.categoria, ra.descripcion;
 
 GO
 
-CREATE VIEW tasa_ausentismo_finales AS
+CREATE VIEW DROP_DATABASE.tasa_ausentismo_finales AS
 SELECT
     t.anio,
     t.semestre,
@@ -643,7 +645,7 @@ GROUP BY t.anio, t.semestre, s.nombre;
 
 GO
 
-CREATE VIEW desvio_pagos AS
+CREATE VIEW DROP_DATABASE.desvio_pagos AS
 SELECT
     t.anio,
     t.semestre,
@@ -657,7 +659,7 @@ GROUP BY t.anio, t.semestre, mp.nombre;
 
 GO
 
-CREATE VIEW tasa_morosidad_financiera_mensual AS
+CREATE VIEW DROP_DATABASE.tasa_morosidad_financiera_mensual AS
 SELECT
     t.anio,
     t.mes,
@@ -672,7 +674,7 @@ GROUP BY t.anio, t.mes, s.nombre, c.categoria;
 
 GO
 
-CREATE VIEW ingresos_por_categoria_cursos AS
+CREATE VIEW DROP_DATABASE.ingresos_por_categoria_cursos AS
 SELECT TOP 3
     t.anio,
     s.nombre AS sede,
@@ -687,7 +689,7 @@ ORDER BY ingresos DESC;
 
 
 GO
-CREATE VIEW indice_satisfación AS
+CREATE VIEW DROP_DATABASE.indice_satisfación AS
 SELECT
     t.anio,
     s.nombre AS sede,
